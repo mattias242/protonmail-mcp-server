@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     smtp_port: int = 1026
     username: str
     password: str
+    verify_ssl: bool = False
+    smtp_ca_cert: str | None = None
 
     model_config = SettingsConfigDict(
         env_prefix="PROTONMAIL_",

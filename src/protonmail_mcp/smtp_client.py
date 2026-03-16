@@ -1,9 +1,10 @@
 import logging
+import re
 import ssl
 from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formatdate, make_msgid
+from email.utils import formatdate, make_msgid, parseaddr
 from typing import Sequence
 
 import aiosmtplib
@@ -11,6 +12,28 @@ import aiosmtplib
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def _validate_email_addr(addr: str) -> str:
+    """Kastar ValueError om adressen innehåller CRLF eller är ogiltig."""
+    if '\r' in addr or '\n' in addr:
+        raise ValueError(f"Ogiltig e-postadress (CRLF): {addr!r}")
+    _, parsed = parseaddr(addr)
+    if not parsed or not _EMAIL_RE.match(parsed):
+        raise ValueError(f"Ogiltig e-postadress: {addr!r}")
+    return addr
+
+
+def _validate_subject(subject: str) -> str:
+    """Kastar ValueError om ämnesraden innehåller CRLF eller är för lång."""
+    if '\r' in subject or '\n' in subject:
+        raise ValueError("Ämnesraden får inte innehålla radbrytningar")
+    if len(subject) > 998:
+        raise ValueError("Ämnesraden är för lång (max 998 tecken)")
+    return subject
 
 
 def _normalize_recipients(value: str | Sequence[str] | None) -> list[str]:
@@ -56,10 +79,18 @@ def _build_message(
 class SMTPClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        # Bridge v3 port 1026: direkt SSL med self-signed cert
         self._ssl_ctx = ssl.create_default_context()
         self._ssl_ctx.check_hostname = False
-        self._ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        if settings.verify_ssl and settings.smtp_ca_cert:
+            # Pinna Bridge-certifikatet
+            self._ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+            self._ssl_ctx.load_verify_locations(cafile=settings.smtp_ca_cert)
+        elif settings.verify_ssl:
+            self._ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        else:
+            # Standard Bridge-läge: self-signed cert
+            self._ssl_ctx.verify_mode = ssl.CERT_NONE
 
     async def send_email(
         self,
@@ -71,9 +102,16 @@ class SMTPClient:
         bcc: str | Sequence[str] | None = None,
         reply_to: str | None = None,
     ) -> bool:
+        _validate_subject(subject)
+
         to_list = _normalize_recipients(to)
         cc_list = _normalize_recipients(cc)
         bcc_list = _normalize_recipients(bcc)
+
+        for addr in to_list + cc_list + bcc_list:
+            _validate_email_addr(addr)
+        if reply_to:
+            _validate_email_addr(reply_to)
 
         msg = _build_message(
             from_addr=self._settings.username,

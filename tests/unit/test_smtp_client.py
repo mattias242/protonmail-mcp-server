@@ -13,6 +13,8 @@ import pytest
 from protonmail_mcp.config import Settings
 from protonmail_mcp.smtp_client import SMTPClient, _build_message, _normalize_recipients
 
+import ssl
+
 
 @pytest.fixture
 def settings() -> Settings:
@@ -364,3 +366,105 @@ def test_build_message_empty_to_list():
         body="No recipients",
     )
     assert msg["To"] == ""
+
+
+# -------------------------------------------------------------------
+# Header injection protection
+# -------------------------------------------------------------------
+
+
+async def test_send_email_rejects_crlf_in_subject(settings: Settings, mock_smtp):
+    """Subject med \\n ska ge ValueError."""
+    smtp_cls, smtp_instance = mock_smtp
+    client = SMTPClient(settings)
+
+    with pytest.raises(ValueError, match="radbrytningar"):
+        await client.send_email(
+            to="alice@example.com",
+            subject="Bad\nSubject",
+            body="Test",
+        )
+
+
+async def test_send_email_rejects_crlf_in_to(settings: Settings, mock_smtp):
+    """To-adress med \\r\\n ska ge ValueError."""
+    smtp_cls, smtp_instance = mock_smtp
+    client = SMTPClient(settings)
+
+    with pytest.raises(ValueError, match="CRLF"):
+        await client.send_email(
+            to="evil@example.com\r\nBcc: victim@example.com",
+            subject="Test",
+            body="Test",
+        )
+
+
+async def test_send_email_rejects_invalid_email(settings: Settings, mock_smtp):
+    """Ogiltig e-postadress ska ge ValueError."""
+    smtp_cls, smtp_instance = mock_smtp
+    client = SMTPClient(settings)
+
+    with pytest.raises(ValueError, match="Ogiltig e-postadress"):
+        await client.send_email(
+            to="not-an-email",
+            subject="Test",
+            body="Test",
+        )
+
+
+async def test_validate_subject_too_long(settings: Settings, mock_smtp):
+    """>998 tecken i subject ska ge ValueError."""
+    smtp_cls, smtp_instance = mock_smtp
+    client = SMTPClient(settings)
+
+    with pytest.raises(ValueError, match="för lång"):
+        await client.send_email(
+            to="alice@example.com",
+            subject="A" * 999,
+            body="Test",
+        )
+
+
+# -------------------------------------------------------------------
+# SSL cert pinning
+# -------------------------------------------------------------------
+
+
+def test_ssl_cert_none_when_verify_ssl_false():
+    """verify_ssl=False → CERT_NONE."""
+    s = Settings(
+        username="user@proton.me",
+        password="pw",
+        verify_ssl=False,
+    )
+    client = SMTPClient(s)
+    assert client._ssl_ctx.verify_mode == ssl.CERT_NONE
+
+
+def test_ssl_cert_required_when_ca_cert_provided(tmp_path):
+    """verify_ssl=True + smtp_ca_cert → CERT_REQUIRED + load_verify_locations anropad."""
+    # Skapa en dummy CA-fil (behöver inte vara giltig för att testa att den laddas)
+    ca_file = tmp_path / "bridge.pem"
+    ca_file.write_text("dummy")
+
+    s = Settings(
+        username="user@proton.me",
+        password="pw",
+        verify_ssl=True,
+        smtp_ca_cert=str(ca_file),
+    )
+    with patch("ssl.SSLContext.load_verify_locations") as mock_load:
+        client = SMTPClient(s)
+        assert client._ssl_ctx.verify_mode == ssl.CERT_REQUIRED
+        mock_load.assert_called_once_with(cafile=str(ca_file))
+
+
+def test_ssl_default_when_verify_ssl_true_no_ca():
+    """verify_ssl=True, ingen ca_cert → CERT_REQUIRED."""
+    s = Settings(
+        username="user@proton.me",
+        password="pw",
+        verify_ssl=True,
+    )
+    client = SMTPClient(s)
+    assert client._ssl_ctx.verify_mode == ssl.CERT_REQUIRED
