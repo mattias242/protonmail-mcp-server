@@ -13,19 +13,19 @@ async def search_emails(
     since: str | None = None,
     before: str | None = None,
     unseen: bool | None = None,
-) -> list[str]:
+) -> list[dict]:
     """Sök e-post med filter.
 
     Args:
         mailbox: Mappnamn att söka i (standard: INBOX)
         from_addr: Filtrera på avsändaradress
         subject: Filtrera på ämnesrad
-        since: Filtrera e-post efter datum (format: DD-Mon-YYYY, t.ex. 01-Jan-2024)
-        before: Filtrera e-post före datum (format: DD-Mon-YYYY)
+        since: Filtrera e-post efter datum (format: YYYY-MM-DD eller DD-Mon-YYYY)
+        before: Filtrera e-post före datum (format: YYYY-MM-DD eller DD-Mon-YYYY)
         unseen: True=bara olästa, False=bara lästa, None=alla
 
     Returns:
-        Lista med UID:n för matchande e-post
+        Lista med metadata-dicts (uid, subject, from, date, flags) för matchande e-post
     """
     app = _get_app(ctx)
     return await app.imap.search_messages(

@@ -6,11 +6,13 @@ from types import SimpleNamespace
 
 from protonmail_mcp.imap_client import (
     _validate_uid,
+    _validate_mailbox,
     _escape_imap_string,
     _parse_seqnums,
     _parse_fetch_metadata,
     _parse_list_line,
     _parse_headers,
+    _to_imap_date,
     IMAPClient,
 )
 
@@ -37,6 +39,43 @@ class TestValidateUid:
     def test_rejects_negative(self):
         with pytest.raises(ValueError, match="Ogiltigt UID"):
             _validate_uid("-1")
+
+
+# ---------------------------------------------------------------------------
+# _validate_mailbox
+# ---------------------------------------------------------------------------
+class TestValidateMailbox:
+    def test_validate_mailbox_valid(self):
+        assert _validate_mailbox("INBOX") == "INBOX"
+        assert _validate_mailbox("Folders/Sub") == "Folders/Sub"
+        assert _validate_mailbox("Labels/Arbete") == "Labels/Arbete"
+
+    def test_validate_mailbox_rejects_wildcard(self):
+        with pytest.raises(ValueError, match="Ogiltigt mailbox-namn"):
+            _validate_mailbox("INBOX*")
+
+    def test_validate_mailbox_rejects_dotdot(self):
+        with pytest.raises(ValueError, match="Ogiltigt mailbox-namn"):
+            _validate_mailbox("../etc/passwd")
+
+    def test_validate_mailbox_rejects_control_chars(self):
+        with pytest.raises(ValueError, match="Ogiltigt mailbox-namn"):
+            _validate_mailbox("INBOX\x00")
+        with pytest.raises(ValueError, match="Ogiltigt mailbox-namn"):
+            _validate_mailbox("IN\nBOX")
+
+
+# ---------------------------------------------------------------------------
+# _to_imap_date
+# ---------------------------------------------------------------------------
+class TestToImapDate:
+    def test_to_imap_date_converts_iso(self):
+        assert _to_imap_date("2024-01-15") == "15-Jan-2024"
+        assert _to_imap_date("2026-03-01") == "01-Mar-2026"
+
+    def test_to_imap_date_passthrough_existing_format(self):
+        assert _to_imap_date("15-Jan-2024") == "15-Jan-2024"
+        assert _to_imap_date("01-Mar-2026") == "01-Mar-2026"
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +457,37 @@ class TestConnectErrors:
 
 
 # ---------------------------------------------------------------------------
+# IMAPClient._ensure_connected — NOOP reconnect
+# ---------------------------------------------------------------------------
+class TestEnsureConnectedReconnect:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        return IMAPClient(settings)
+
+    @pytest.mark.asyncio
+    async def test_ensure_connected_reconnects_on_noop_failure(self, client):
+        """Om NOOP misslyckas ska klienten återansluta."""
+        mock_old_client = AsyncMock()
+        mock_old_client.noop = AsyncMock(side_effect=Exception("Connection lost"))
+        client._client = mock_old_client
+
+        mock_new_client = AsyncMock()
+        mock_new_client.wait_hello_from_server = AsyncMock()
+        mock_new_client.login = AsyncMock()
+
+        with patch("protonmail_mcp.imap_client.aioimaplib.IMAP4", return_value=mock_new_client):
+            await client._ensure_connected()
+
+        # Gamla klienten ska vara borta, ny klient ska vara satt
+        assert client._client is mock_new_client
+        mock_new_client.login.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # IMAPClient.list_mailboxes — BAD result
 # ---------------------------------------------------------------------------
 class TestListMailboxesBadResult:
@@ -439,6 +509,59 @@ class TestListMailboxesBadResult:
             lines=["some error"],
         ))
         result = await client.list_mailboxes()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.search_messages — metadata dicts
+# ---------------------------------------------------------------------------
+class TestSearchMessagesMetadata:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_search_messages_returns_metadata_dicts(self, client):
+        """search_messages ska returnera lista med dicts (uid, subject, from, date, flags)."""
+        client._client.search = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[b"1 2"],
+        ))
+        client._client.fetch = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '1 FETCH (UID 100 FLAGS (\\Seen) BODY[HEADER.FIELDS (DATE FROM SUBJECT)] {80}',
+                bytearray(b"Subject: Hello\r\nFrom: alice@example.com\r\nDate: Mon, 16 Mar 2026 10:00:00 +0100\r\n"),
+                ")",
+                '2 FETCH (UID 200 FLAGS () BODY[HEADER.FIELDS (DATE FROM SUBJECT)] {60}',
+                bytearray(b"Subject: World\r\nFrom: bob@example.com\r\n"),
+                ")",
+            ],
+        ))
+        result = await client.search_messages("INBOX")
+        assert isinstance(result, list)
+        assert len(result) == 2
+        # Nyaste först (reverserad)
+        assert result[0]["uid"] == "200"
+        assert result[1]["uid"] == "100"
+        assert result[1]["subject"] == "Hello"
+        assert result[1]["from"] == "alice@example.com"
+        assert "\\Seen" in result[1]["flags"]
+
+    @pytest.mark.asyncio
+    async def test_search_messages_empty_returns_empty_list(self, client):
+        """Tom sökning ska returnera tom lista."""
+        client._client.search = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[b""],
+        ))
+        result = await client.search_messages("INBOX")
         assert result == []
 
 
@@ -475,6 +598,83 @@ class TestSearchMessagesEmpty:
         ))
         result = await client.search_messages("INBOX", from_addr="nobody@example.com")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.get_message_headers
+# ---------------------------------------------------------------------------
+class TestGetMessageHeaders:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_get_message_headers_returns_dict(self, client):
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '1 FETCH (BODY[HEADER.FIELDS ...] {100}',
+                bytearray(b"From: alice@example.com\r\nTo: bob@example.com\r\nSubject: Test\r\nDate: Mon, 16 Mar 2026\r\nMessage-ID: <abc@ex>\r\nReply-To: reply@ex.com\r\nCc: cc@ex.com\r\n"),
+                ")",
+            ],
+        ))
+        result = await client.get_message_headers("INBOX", "42")
+        assert isinstance(result, dict)
+        assert result["from"] == "alice@example.com"
+        assert result["to"] == "bob@example.com"
+        assert result["subject"] == "Test"
+        assert result["message-id"] == "<abc@ex>"
+
+    @pytest.mark.asyncio
+    async def test_get_message_headers_returns_none_on_bad_result(self, client):
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(
+            result="NO",
+            lines=[],
+        ))
+        result = await client.get_message_headers("INBOX", "42")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.create_folder / delete_folder / rename_folder
+# ---------------------------------------------------------------------------
+class TestFolderManagement:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_create_folder_ok(self, client):
+        client._client.create = AsyncMock(return_value=SimpleNamespace(result="OK"))
+        result = await client.create_folder("NewFolder")
+        assert result is True
+        client._client.create.assert_awaited_once_with("NewFolder")
+
+    @pytest.mark.asyncio
+    async def test_delete_folder_ok(self, client):
+        client._client.delete = AsyncMock(return_value=SimpleNamespace(result="OK"))
+        result = await client.delete_folder("OldFolder")
+        assert result is True
+        client._client.delete.assert_awaited_once_with("OldFolder")
+
+    @pytest.mark.asyncio
+    async def test_rename_folder_ok(self, client):
+        client._client.rename = AsyncMock(return_value=SimpleNamespace(result="OK"))
+        result = await client.rename_folder("OldName", "NewName")
+        assert result is True
+        client._client.rename.assert_awaited_once_with("OldName", "NewName")
 
 
 # ---------------------------------------------------------------------------

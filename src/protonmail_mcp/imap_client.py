@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import math
 import re
+from datetime import datetime
 from typing import Any
 
 import aioimaplib
@@ -15,6 +17,22 @@ _UID_RE = re.compile(r'\bUID\s+(\d+)\b')
 _FLAGS_RE = re.compile(r'FLAGS\s+\(([^)]*)\)')
 _STATUS_NUM_RE = re.compile(r'(\w+)\s+(\d+)')
 _VALID_UID_RE = re.compile(r'^\d+$')
+_VALID_MAILBOX_RE = re.compile(r'^[^\x00-\x1F\x7F%*"\\]{1,255}$')
+
+
+def _validate_mailbox(name: str) -> str:
+    if not _VALID_MAILBOX_RE.match(name) or ".." in name:
+        raise ValueError(f"Ogiltigt mailbox-namn: {name!r}")
+    return name
+
+
+def _to_imap_date(value: str) -> str:
+    """Accepterar YYYY-MM-DD eller DD-Mon-YYYY, returnerar alltid DD-Mon-YYYY."""
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%d")
+        return dt.strftime("%d-%b-%Y")
+    except ValueError:
+        return value  # Antag redan rätt format
 
 
 def _validate_uid(uid: str) -> str:
@@ -90,6 +108,13 @@ class IMAPClient:
     async def _ensure_connected(self) -> None:
         if self._client is None:
             await self.connect()
+            return
+        try:
+            await asyncio.wait_for(self._client.noop(), timeout=5.0)
+        except Exception:
+            logger.warning("IMAP NOOP misslyckades — återansluter")
+            self._client = None
+            await self.connect()
 
     async def list_mailboxes(self) -> list[dict[str, str]]:
         await self._ensure_connected()
@@ -107,7 +132,7 @@ class IMAPClient:
         self, mailbox: str, page: int = 1, page_size: int = 20
     ) -> dict[str, Any]:
         await self._ensure_connected()
-        select_resp = await self._client.select(mailbox)
+        select_resp = await self._client.select(_validate_mailbox(mailbox))
 
         # Hämta EXISTS-räknaren från SELECT-svaret
         exists = 0
@@ -159,7 +184,7 @@ class IMAPClient:
 
     async def get_message(self, mailbox: str, uid: str) -> bytes | None:
         await self._ensure_connected()
-        await self._client.select(mailbox)
+        await self._client.select(_validate_mailbox(mailbox))
         resp = await self._client.uid("fetch", _validate_uid(uid), "BODY[]")
         if resp.result != "OK":
             return None
@@ -179,9 +204,9 @@ class IMAPClient:
         before: str | None = None,
         unseen: bool | None = None,
         max_results: int = 200,
-    ) -> list[str]:
+    ) -> list[dict]:
         await self._ensure_connected()
-        await self._client.select(mailbox)
+        await self._client.select(_validate_mailbox(mailbox))
 
         criteria: list[str] = []
         if from_addr:
@@ -189,9 +214,9 @@ class IMAPClient:
         if subject:
             criteria += ["SUBJECT", f'"{_escape_imap_string(subject)}"']
         if since:
-            criteria += ["SINCE", since]
+            criteria += ["SINCE", _to_imap_date(since)]
         if before:
-            criteria += ["BEFORE", before]
+            criteria += ["BEFORE", _to_imap_date(before)]
         if unseen is True:
             criteria.append("UNSEEN")
         elif unseen is False:
@@ -199,7 +224,7 @@ class IMAPClient:
         if not criteria:
             criteria = ["ALL"]
 
-        # search() returnerar sekvensnummer — vi hämtar sedan deras UID:n
+        # search() returnerar sekvensnummer — vi hämtar sedan metadata
         resp = await self._client.search(" ".join(criteria))
         seqnums = _parse_seqnums(resp)
         if not seqnums:
@@ -208,30 +233,29 @@ class IMAPClient:
         # Begränsa till nyaste max_results för att undvika rekursionsproblem
         seqnums = seqnums[-max_results:]
 
-        fetch_resp = await self._client.fetch(",".join(seqnums), "(UID)")
+        fetch_resp = await self._client.fetch(
+            ",".join(seqnums),
+            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT)])",
+        )
         if fetch_resp.result != "OK":
             return []
 
-        uids = []
-        for line in fetch_resp.lines:
-            m = _UID_RE.search(_decode(line))
-            if m:
-                uids.append(m.group(1))
-        uids.reverse()  # nyaste först
-        return uids
+        msgs = _parse_fetch_metadata(fetch_resp.lines)
+        msgs.reverse()  # nyaste först
+        return msgs
 
     async def set_flags(self, mailbox: str, uid: str, flags: str, add: bool) -> bool:
         await self._ensure_connected()
-        await self._client.select(mailbox)
+        await self._client.select(_validate_mailbox(mailbox))
         action = "+FLAGS" if add else "-FLAGS"
         resp = await self._client.uid("store", _validate_uid(uid), action, flags)
         return resp.result == "OK"
 
     async def move_message(self, mailbox: str, uid: str, target: str) -> bool:
         await self._ensure_connected()
-        await self._client.select(mailbox)
+        await self._client.select(_validate_mailbox(mailbox))
         safe_uid = _validate_uid(uid)
-        copy_resp = await self._client.uid("copy", safe_uid, target)
+        copy_resp = await self._client.uid("copy", safe_uid, _validate_mailbox(target))
         if copy_resp.result != "OK":
             return False
         await self._client.uid("store", safe_uid, "+FLAGS", r"(\Deleted)")
@@ -240,15 +264,44 @@ class IMAPClient:
 
     async def delete_message(self, mailbox: str, uid: str) -> bool:
         await self._ensure_connected()
-        await self._client.select(mailbox)
+        await self._client.select(_validate_mailbox(mailbox))
         safe_uid = _validate_uid(uid)
         await self._client.uid("store", safe_uid, "+FLAGS", r"(\Deleted)")
         await self._client.expunge()
         return True
 
+    async def get_message_headers(self, mailbox: str, uid: str) -> dict | None:
+        await self._ensure_connected()
+        await self._client.select(_validate_mailbox(mailbox))
+        resp = await self._client.uid(
+            "fetch", _validate_uid(uid),
+            "BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID REPLY-TO)]"
+        )
+        if resp.result != "OK":
+            return None
+        for line in resp.lines:
+            if isinstance(line, bytearray) and len(line) > 4:
+                return _parse_headers(bytes(line))
+        return None
+
+    async def create_folder(self, name: str) -> bool:
+        await self._ensure_connected()
+        resp = await self._client.create(_validate_mailbox(name))
+        return resp.result == "OK"
+
+    async def delete_folder(self, name: str) -> bool:
+        await self._ensure_connected()
+        resp = await self._client.delete(_validate_mailbox(name))
+        return resp.result == "OK"
+
+    async def rename_folder(self, old_name: str, new_name: str) -> bool:
+        await self._ensure_connected()
+        resp = await self._client.rename(_validate_mailbox(old_name), _validate_mailbox(new_name))
+        return resp.result == "OK"
+
     async def get_mailbox_status(self, mailbox: str) -> dict[str, int]:
         await self._ensure_connected()
-        resp = await self._client.status(mailbox, "(MESSAGES UNSEEN)")
+        resp = await self._client.status(_validate_mailbox(mailbox), "(MESSAGES UNSEEN)")
         status: dict[str, int] = {}
         if resp.result == "OK":
             for line in resp.lines:
