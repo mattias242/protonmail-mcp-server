@@ -475,3 +475,80 @@ class TestSearchMessagesEmpty:
         ))
         result = await client.search_messages("INBOX", from_addr="nobody@example.com")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.list_messages — page-baserad pagination
+# ---------------------------------------------------------------------------
+class TestListMessagesPagination:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    def _make_select_resp(self, exists: int):
+        return SimpleNamespace(result="OK", lines=[f"{exists} EXISTS"])
+
+    def _make_fetch_resp(self, uids: list[int]):
+        """Bygger ett FETCH-svar med givna UID:n (i sekvensordning)."""
+        lines = []
+        for uid in uids:
+            lines.append(
+                f'1 FETCH (UID {uid} FLAGS () BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)] {{50}}'
+            )
+            lines.append(bytearray(f"Subject: Mail {uid}\r\nFrom: a@b.com\r\n".encode()))
+            lines.append(")")
+        return SimpleNamespace(result="OK", lines=lines)
+
+    @pytest.mark.asyncio
+    async def test_list_messages_returns_pagination_envelope(self, client):
+        """Returvärdet ska ha nycklar: messages, total, page, pages, has_more."""
+        client._client.select = AsyncMock(return_value=self._make_select_resp(5))
+        client._client.fetch = AsyncMock(return_value=self._make_fetch_resp([1, 2, 3, 4, 5]))
+
+        result = await client.list_messages("INBOX", page=1, page_size=20)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"messages", "total", "page", "pages", "has_more"}
+        assert isinstance(result["messages"], list)
+
+    @pytest.mark.asyncio
+    async def test_list_messages_page1(self, client):
+        """page=1, page_size=5, total=12 → has_more=True, pages=3."""
+        client._client.select = AsyncMock(return_value=self._make_select_resp(12))
+        client._client.fetch = AsyncMock(return_value=self._make_fetch_resp([8, 9, 10, 11, 12]))
+
+        result = await client.list_messages("INBOX", page=1, page_size=5)
+        assert result["total"] == 12
+        assert result["page"] == 1
+        assert result["pages"] == 3
+        assert result["has_more"] is True
+        assert len(result["messages"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_list_messages_last_page(self, client):
+        """Sista sidan → has_more=False, rätt antal meddelanden."""
+        client._client.select = AsyncMock(return_value=self._make_select_resp(12))
+        client._client.fetch = AsyncMock(return_value=self._make_fetch_resp([1, 2]))
+
+        result = await client.list_messages("INBOX", page=3, page_size=5)
+        assert result["total"] == 12
+        assert result["page"] == 3
+        assert result["pages"] == 3
+        assert result["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_list_messages_empty_mailbox(self, client):
+        """Tom mailbox → total=0, pages=0, tom messages-lista."""
+        client._client.select = AsyncMock(return_value=self._make_select_resp(0))
+
+        result = await client.list_messages("INBOX", page=1, page_size=20)
+        assert isinstance(result, dict)
+        assert result["total"] == 0
+        assert result["pages"] == 0
+        assert result["has_more"] is False
+        assert result["messages"] == []

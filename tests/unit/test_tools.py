@@ -55,19 +55,24 @@ class TestGetMailboxStatus:
 
 
 class TestListEmails:
-    async def test_delegates_with_all_args(self, mock_ctx):
-        mock_ctx.request_context.lifespan_context.imap.list_messages.return_value = [{"uid": "1"}]
-        result = await list_emails(mock_ctx, mailbox="Sent", limit=10, offset=5)
+    async def test_delegates_with_page_args(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.list_messages.return_value = {
+            "messages": [{"uid": "1"}], "total": 1, "page": 2, "pages": 3, "has_more": True
+        }
+        result = await list_emails(mock_ctx, mailbox="Sent", page=2, page_size=10)
         mock_ctx.request_context.lifespan_context.imap.list_messages.assert_called_once_with(
-            "Sent", limit=10, offset=5
+            "Sent", page=2, page_size=10
         )
-        assert result == [{"uid": "1"}]
+        assert result["page"] == 2
+        assert result["messages"] == [{"uid": "1"}]
 
     async def test_default_args(self, mock_ctx):
-        mock_ctx.request_context.lifespan_context.imap.list_messages.return_value = []
+        mock_ctx.request_context.lifespan_context.imap.list_messages.return_value = {
+            "messages": [], "total": 0, "page": 1, "pages": 0, "has_more": False
+        }
         await list_emails(mock_ctx)
         mock_ctx.request_context.lifespan_context.imap.list_messages.assert_called_once_with(
-            "INBOX", limit=20, offset=0
+            "INBOX", page=1, page_size=20
         )
 
 

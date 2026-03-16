@@ -1,4 +1,5 @@
 import logging
+import math
 import re
 from typing import Any
 
@@ -103,8 +104,8 @@ class IMAPClient:
         return mailboxes
 
     async def list_messages(
-        self, mailbox: str, limit: int = 20, offset: int = 0
-    ) -> list[dict[str, Any]]:
+        self, mailbox: str, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
         await self._ensure_connected()
         select_resp = await self._client.select(mailbox)
 
@@ -117,23 +118,44 @@ class IMAPClient:
                 exists = int(m.group(1))
                 break
 
+        total_pages = math.ceil(exists / page_size) if exists > 0 else 0
+
         if exists == 0:
-            return []
+            return {
+                "messages": [],
+                "total": 0,
+                "page": page,
+                "pages": 0,
+                "has_more": False,
+            }
 
         # Beräkna sekvensintervall för nyaste-först paginering
+        offset = (page - 1) * page_size
         stop = max(1, exists - offset)
-        start = max(1, stop - limit + 1)
+        start = max(1, stop - page_size + 1)
 
         fetch_resp = await self._client.fetch(
             f"{start}:{stop}",
             "(UID FLAGS BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)])",
         )
         if fetch_resp.result != "OK":
-            return []
+            return {
+                "messages": [],
+                "total": exists,
+                "page": page,
+                "pages": total_pages,
+                "has_more": page < total_pages,
+            }
 
         msgs = _parse_fetch_metadata(fetch_resp.lines)
         msgs.reverse()  # nyaste överst
-        return msgs
+        return {
+            "messages": msgs,
+            "total": exists,
+            "page": page,
+            "pages": total_pages,
+            "has_more": page < total_pages,
+        }
 
     async def get_message(self, mailbox: str, uid: str) -> bytes | None:
         await self._ensure_connected()
