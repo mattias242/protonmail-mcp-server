@@ -54,6 +54,7 @@ def _build_message(
     body_html: str | None = None,
     cc_list: list[str] | None = None,
     reply_to: str | None = None,
+    additional_headers: dict[str, str] | None = None,
 ) -> Message:
     """Build a MIME message without requiring an SMTP connection."""
     if body_html:
@@ -72,6 +73,9 @@ def _build_message(
         msg["Cc"] = ", ".join(cc_list)
     if reply_to:
         msg["Reply-To"] = reply_to
+    if additional_headers:
+        for key, value in additional_headers.items():
+            msg[key] = value
 
     return msg
 
@@ -101,6 +105,7 @@ class SMTPClient:
         cc: str | Sequence[str] | None = None,
         bcc: str | Sequence[str] | None = None,
         reply_to: str | None = None,
+        additional_headers: dict[str, str] | None = None,
     ) -> bool:
         _validate_subject(subject)
 
@@ -121,6 +126,7 @@ class SMTPClient:
             body_html=body_html,
             cc_list=cc_list,
             reply_to=reply_to,
+            additional_headers=additional_headers,
         )
 
         all_recipients = to_list + cc_list + bcc_list

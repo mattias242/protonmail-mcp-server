@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 
 from protonmail_mcp.tools.mailboxes import list_mailboxes, get_mailbox_status
-from protonmail_mcp.tools.messages import list_emails, get_email
+from protonmail_mcp.tools.messages import list_emails, get_email, get_email_headers
 from protonmail_mcp.tools.search import search_emails
 from protonmail_mcp.tools.manage import (
     mark_email_read,
@@ -12,6 +12,8 @@ from protonmail_mcp.tools.manage import (
     delete_email,
 )
 from protonmail_mcp.tools.send import send_email
+from protonmail_mcp.tools.reply import reply_to_email, forward_email
+from protonmail_mcp.tools.folders import create_folder, delete_folder, rename_folder
 
 
 @pytest.fixture
@@ -210,3 +212,104 @@ class TestSendEmail:
             bcc=None,
             reply_to=None,
         )
+
+
+# --- messages.py (get_email_headers) ---
+
+
+class TestGetEmailHeaders:
+    async def test_get_email_headers_delegates_to_imap(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.get_message_headers.return_value = {
+            "from": "alice@example.com",
+            "subject": "Hello",
+            "message-id": "<abc@example.com>",
+        }
+        result = await get_email_headers(mock_ctx, uid="42", mailbox="INBOX")
+        mock_ctx.request_context.lifespan_context.imap.get_message_headers.assert_called_once_with(
+            "INBOX", "42"
+        )
+        assert result == {
+            "from": "alice@example.com",
+            "subject": "Hello",
+            "message-id": "<abc@example.com>",
+        }
+
+    async def test_get_email_headers_returns_none_when_not_found(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.get_message_headers.return_value = None
+        result = await get_email_headers(mock_ctx, uid="999")
+        assert result is None
+
+
+# --- folders.py ---
+
+
+class TestCreateFolder:
+    async def test_create_folder_delegates(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.create_folder.return_value = True
+        result = await create_folder(mock_ctx, name="MyFolder")
+        mock_ctx.request_context.lifespan_context.imap.create_folder.assert_called_once_with("MyFolder")
+        assert result is True
+
+
+class TestDeleteFolder:
+    async def test_delete_folder_delegates(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.delete_folder.return_value = True
+        result = await delete_folder(mock_ctx, name="OldFolder")
+        mock_ctx.request_context.lifespan_context.imap.delete_folder.assert_called_once_with("OldFolder")
+        assert result is True
+
+
+class TestRenameFolder:
+    async def test_rename_folder_delegates(self, mock_ctx):
+        mock_ctx.request_context.lifespan_context.imap.rename_folder.return_value = True
+        result = await rename_folder(mock_ctx, old_name="Old", new_name="New")
+        mock_ctx.request_context.lifespan_context.imap.rename_folder.assert_called_once_with("Old", "New")
+        assert result is True
+
+
+# --- reply.py ---
+
+
+class TestReplyToEmail:
+    async def test_reply_sets_re_prefix(self, mock_ctx, sample_raw_email):
+        mock_ctx.request_context.lifespan_context.imap.get_message.return_value = sample_raw_email
+        mock_ctx.request_context.lifespan_context.smtp.send_email.return_value = True
+        result = await reply_to_email(mock_ctx, uid="10", body="Thanks!")
+        mock_ctx.request_context.lifespan_context.smtp.send_email.assert_called_once()
+        call_kwargs = mock_ctx.request_context.lifespan_context.smtp.send_email.call_args[1]
+        assert call_kwargs["subject"] == "Re: Test subject"
+        assert result is True
+
+    async def test_reply_does_not_double_re_prefix(self, mock_ctx):
+        raw = (
+            "From: sender@example.com\r\n"
+            "To: me@example.com\r\n"
+            "Subject: Re: Already replied\r\n"
+            "Message-ID: <orig@example.com>\r\n"
+            "Content-Type: text/plain\r\n"
+            "\r\n"
+            "Original body\r\n"
+        ).encode()
+        mock_ctx.request_context.lifespan_context.imap.get_message.return_value = raw
+        mock_ctx.request_context.lifespan_context.smtp.send_email.return_value = True
+        await reply_to_email(mock_ctx, uid="11", body="Got it")
+        call_kwargs = mock_ctx.request_context.lifespan_context.smtp.send_email.call_args[1]
+        assert call_kwargs["subject"] == "Re: Already replied"
+
+
+class TestForwardEmail:
+    async def test_forward_sets_fwd_prefix(self, mock_ctx, sample_raw_email):
+        mock_ctx.request_context.lifespan_context.imap.get_message.return_value = sample_raw_email
+        mock_ctx.request_context.lifespan_context.smtp.send_email.return_value = True
+        result = await forward_email(mock_ctx, uid="10", to="bob@example.com")
+        call_kwargs = mock_ctx.request_context.lifespan_context.smtp.send_email.call_args[1]
+        assert call_kwargs["subject"] == "Fwd: Test subject"
+        assert result is True
+
+    async def test_forward_includes_original_body(self, mock_ctx, sample_raw_email):
+        mock_ctx.request_context.lifespan_context.imap.get_message.return_value = sample_raw_email
+        mock_ctx.request_context.lifespan_context.smtp.send_email.return_value = True
+        await forward_email(mock_ctx, uid="10", to="bob@example.com", body="FYI")
+        call_kwargs = mock_ctx.request_context.lifespan_context.smtp.send_email.call_args[1]
+        assert "Hello world!" in call_kwargs["body"]
+        assert "FYI" in call_kwargs["body"]

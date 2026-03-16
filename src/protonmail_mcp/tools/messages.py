@@ -6,6 +6,25 @@ from . import _get_app
 
 
 @mcp.tool()
+async def get_email_headers(
+    ctx: Context,
+    uid: str,
+    mailbox: str = "INBOX",
+) -> dict | None:
+    """Hämta headers för ett e-post utan att ladda body (snabb operation).
+
+    Args:
+        uid: E-postets UID
+        mailbox: Mappnamn (standard: INBOX)
+
+    Returns:
+        Dict med from, to, cc, subject, date, message_id, reply_to — eller None om ej hittat
+    """
+    app = _get_app(ctx)
+    return await app.imap.get_message_headers(mailbox, uid)
+
+
+@mcp.tool()
 async def list_emails(
     ctx: Context,
     mailbox: str = "INBOX",
