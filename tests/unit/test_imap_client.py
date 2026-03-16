@@ -1,0 +1,272 @@
+"""Tester för imap_client.py — validering, escaping, parsning och IMAP-operationer."""
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+
+from protonmail_mcp.imap_client import (
+    _validate_uid,
+    _escape_imap_string,
+    _parse_seqnums,
+    _parse_fetch_metadata,
+    IMAPClient,
+)
+
+
+# ---------------------------------------------------------------------------
+# _validate_uid
+# ---------------------------------------------------------------------------
+class TestValidateUid:
+    def test_valid_numeric_uid(self):
+        assert _validate_uid("123") == "123"
+
+    def test_rejects_sequence_set(self):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            _validate_uid("1:*")
+
+    def test_rejects_injection_attempt(self):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            _validate_uid("123 STORE")
+
+    def test_rejects_empty_string(self):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            _validate_uid("")
+
+    def test_rejects_negative(self):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            _validate_uid("-1")
+
+
+# ---------------------------------------------------------------------------
+# _escape_imap_string
+# ---------------------------------------------------------------------------
+class TestEscapeImapString:
+    def test_normal_string_unchanged(self):
+        assert _escape_imap_string("normal") == "normal"
+
+    def test_escapes_double_quote(self):
+        assert _escape_imap_string('with"quote') == 'with\\"quote'
+
+    def test_escapes_backslash(self):
+        assert _escape_imap_string("with\\back") == "with\\\\back"
+
+    def test_escapes_both(self):
+        assert _escape_imap_string('a\\"b') == 'a\\\\\\"b'
+
+
+# ---------------------------------------------------------------------------
+# _parse_seqnums
+# ---------------------------------------------------------------------------
+class TestParseSeqnums:
+    def test_ok_response_with_numbers(self):
+        resp = SimpleNamespace(result="OK", lines=[b"1 2 3 45"])
+        assert _parse_seqnums(resp) == ["1", "2", "3", "45"]
+
+    def test_filters_non_digits(self):
+        resp = SimpleNamespace(result="OK", lines=[b"1 SEARCH 2 3"])
+        assert _parse_seqnums(resp) == ["1", "2", "3"]
+
+    def test_not_ok_returns_empty(self):
+        resp = SimpleNamespace(result="NO", lines=[b"1 2 3"])
+        assert _parse_seqnums(resp) == []
+
+    def test_empty_lines_returns_empty(self):
+        resp = SimpleNamespace(result="OK", lines=[])
+        assert _parse_seqnums(resp) == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_fetch_metadata
+# ---------------------------------------------------------------------------
+class TestParseFetchMetadata:
+    def test_parses_uid_flags_and_headers(self):
+        lines = [
+            '1 FETCH (UID 42 FLAGS (\\Seen \\Flagged) BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)] {120}',
+            bytearray(
+                b"Subject: Test mail\r\n"
+                b"From: alice@example.com\r\n"
+                b"To: bob@example.com\r\n"
+                b"Date: Mon, 16 Mar 2026 10:00:00 +0100\r\n"
+                b"Message-ID: <abc@example.com>\r\n"
+            ),
+            ")",
+        ]
+        result = _parse_fetch_metadata(lines)
+        assert len(result) == 1
+        msg = result[0]
+        assert msg["uid"] == "42"
+        assert "\\Seen" in msg["flags"]
+        assert "\\Flagged" in msg["flags"]
+        assert msg["subject"] == "Test mail"
+        assert msg["from"] == "alice@example.com"
+        assert msg["to"] == "bob@example.com"
+        assert msg["date"] == "Mon, 16 Mar 2026 10:00:00 +0100"
+        assert msg["message_id"] == "<abc@example.com>"
+
+    def test_multiple_messages(self):
+        lines = [
+            '1 FETCH (UID 10 FLAGS () BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)] {50}',
+            bytearray(b"Subject: First\r\nFrom: a@b.com\r\n"),
+            ")",
+            '2 FETCH (UID 20 FLAGS (\\Seen) BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)] {50}',
+            bytearray(b"Subject: Second\r\nFrom: c@d.com\r\n"),
+            ")",
+        ]
+        result = _parse_fetch_metadata(lines)
+        assert len(result) == 2
+        assert result[0]["uid"] == "10"
+        assert result[1]["uid"] == "20"
+
+    def test_no_header_bytearray(self):
+        """FETCH-rad utan efterföljande bytearray — headers ska vara tomma."""
+        lines = [
+            '1 FETCH (UID 99 FLAGS (\\Seen) BODY[HEADER.FIELDS (DATE FROM TO SUBJECT MESSAGE-ID)] {0}',
+            ")",
+        ]
+        result = _parse_fetch_metadata(lines)
+        assert len(result) == 1
+        assert result[0]["uid"] == "99"
+        assert result[0]["subject"] == ""
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.list_mailboxes
+# ---------------------------------------------------------------------------
+class TestListMailboxes:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_parses_mailbox_names(self, client):
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '(\\HasNoChildren) "/" "INBOX"',
+                '(\\HasNoChildren) "/" "Sent"',
+                '(\\HasNoChildren) "/" "Folders/Sub"',
+                'command completed',
+            ],
+        ))
+        result = await client.list_mailboxes()
+        names = [m["name"] for m in result]
+        assert "INBOX" in names
+        assert "Sent" in names
+        assert "Folders/Sub" in names
+
+    @pytest.mark.asyncio
+    async def test_empty_on_failure(self, client):
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="NO",
+            lines=[],
+        ))
+        result = await client.list_mailboxes()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.get_message
+# ---------------------------------------------------------------------------
+class TestGetMessage:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_returns_bytes_from_bytearray(self, client):
+        raw_email = bytearray(b"From: a@b.com\r\nSubject: Hi\r\n\r\nBody here")
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '1 FETCH (BODY[] {40}',
+                raw_email,
+                ")",
+            ],
+        ))
+        result = await client.get_message("INBOX", "42")
+        assert isinstance(result, bytes)
+        assert result == bytes(raw_email)
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_failure(self, client):
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(
+            result="NO",
+            lines=[],
+        ))
+        result = await client.get_message("INBOX", "42")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_validates_uid(self, client):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            await client.get_message("INBOX", "1:*")
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.search_messages — escaping
+# ---------------------------------------------------------------------------
+class TestSearchMessages:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_escapes_from_addr_with_quote(self, client):
+        """from_addr med " ska escapas korrekt i IMAP-sökkriterierna."""
+        client._client.search = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[b"1"],
+        ))
+        client._client.fetch = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=['1 FETCH (UID 100)'],
+        ))
+        await client.search_messages("INBOX", from_addr='user"name@example.com')
+        # Verifiera att search anropades med escaped sträng
+        call_args = client._client.search.call_args[0][0]
+        assert '\\"' in call_args
+        assert 'user\\"name@example.com' in call_args
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.delete_message — UID-validering
+# ---------------------------------------------------------------------------
+class TestDeleteMessage:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_uid(self, client):
+        with pytest.raises(ValueError, match="Ogiltigt UID"):
+            await client.delete_message("INBOX", "1:*")
+
+    @pytest.mark.asyncio
+    async def test_successful_delete(self, client):
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(result="OK"))
+        client._client.expunge = AsyncMock(return_value=SimpleNamespace(result="OK"))
+        result = await client.delete_message("INBOX", "42")
+        assert result is True
