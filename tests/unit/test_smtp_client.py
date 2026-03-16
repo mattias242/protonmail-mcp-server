@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from protonmail_mcp.config import Settings
-from protonmail_mcp.smtp_client import SMTPClient
+from protonmail_mcp.smtp_client import SMTPClient, _build_message, _normalize_recipients
 
 
 @pytest.fixture
@@ -36,6 +36,78 @@ def mock_smtp():
 
     with patch("protonmail_mcp.smtp_client.aiosmtplib.SMTP", return_value=smtp_cm) as smtp_cls:
         yield smtp_cls, smtp_instance
+
+
+# -------------------------------------------------------------------
+# _normalize_recipients()
+# -------------------------------------------------------------------
+
+
+def test_normalize_recipients_none():
+    assert _normalize_recipients(None) == []
+
+
+def test_normalize_recipients_string():
+    assert _normalize_recipients("alice@example.com") == ["alice@example.com"]
+
+
+def test_normalize_recipients_list():
+    assert _normalize_recipients(["a@b.com", "c@d.com"]) == ["a@b.com", "c@d.com"]
+
+
+# -------------------------------------------------------------------
+# _build_message()
+# -------------------------------------------------------------------
+
+
+def test_build_message_plain():
+    msg = _build_message(
+        from_addr="sender@test.com",
+        to_list=["alice@test.com"],
+        subject="Test",
+        body="Hello",
+    )
+    assert isinstance(msg, MIMEText)
+    assert msg["From"] == "sender@test.com"
+    assert msg["To"] == "alice@test.com"
+    assert msg["Subject"] == "Test"
+
+
+def test_build_message_html():
+    msg = _build_message(
+        from_addr="sender@test.com",
+        to_list=["alice@test.com"],
+        subject="HTML",
+        body="Plain",
+        body_html="<b>HTML</b>",
+    )
+    assert isinstance(msg, MIMEMultipart)
+    parts = msg.get_payload()
+    assert len(parts) == 2
+
+
+def test_build_message_cc_and_reply_to():
+    msg = _build_message(
+        from_addr="sender@test.com",
+        to_list=["alice@test.com"],
+        subject="Test",
+        body="Hi",
+        cc_list=["cc@test.com"],
+        reply_to="reply@test.com",
+    )
+    assert "cc@test.com" in msg["Cc"]
+    assert msg["Reply-To"] == "reply@test.com"
+
+
+def test_build_message_no_bcc_header():
+    """_build_message should never include a Bcc header."""
+    msg = _build_message(
+        from_addr="sender@test.com",
+        to_list=["alice@test.com"],
+        subject="Test",
+        body="Hi",
+    )
+    assert msg["Bcc"] is None
 
 
 # -------------------------------------------------------------------
