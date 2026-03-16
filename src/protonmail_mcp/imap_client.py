@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 from typing import Any
@@ -42,6 +41,27 @@ def _parse_seqnums(resp) -> list[str]:
     return [n for n in line.split() if n.isdigit()]
 
 
+def _parse_list_line(line: str) -> str | None:
+    """Extraherar mappnamn ur en IMAP LIST-rad. Returnerar None om raden inte matchar."""
+    line = line.strip()
+    if not line or line.startswith("command"):
+        return None
+    m = _LIST_RE.match(line)
+    if not m:
+        return None
+    return m.group(1).strip().strip('"')
+
+
+def _parse_headers(raw: bytes) -> dict[str, str]:
+    """Parsar raw RFC822-headers till en dict med lowercase-nycklar."""
+    result: dict[str, str] = {}
+    for hline in raw.decode("utf-8", errors="replace").splitlines():
+        if ": " in hline:
+            k, _, v = hline.partition(": ")
+            result[k.lower()] = v.strip()
+    return result
+
+
 class IMAPClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -76,12 +96,8 @@ class IMAPClient:
         mailboxes = []
         if resp.result == "OK":
             for line in resp.lines:
-                line = _decode(line).strip()
-                if not line or line.startswith("command"):
-                    continue
-                m = _LIST_RE.match(line)
-                if m:
-                    name = m.group(1).strip().strip('"')
+                name = _parse_list_line(_decode(line))
+                if name:
                     mailboxes.append({"name": name})
         return mailboxes
 
@@ -240,12 +256,7 @@ def _parse_fetch_metadata(lines: list) -> list[dict[str, Any]]:
                 headers_raw = bytes(lines[i + 1])
                 i += 1
 
-            # Parsa headers för visning
-            header_dict: dict[str, str] = {}
-            for hline in headers_raw.decode("utf-8", errors="replace").splitlines():
-                if ": " in hline:
-                    k, _, v = hline.partition(": ")
-                    header_dict[k.lower()] = v.strip()
+            header_dict = _parse_headers(headers_raw)
 
             messages.append({
                 "uid": uid,

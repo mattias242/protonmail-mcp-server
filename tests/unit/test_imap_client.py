@@ -8,6 +8,8 @@ from protonmail_mcp.imap_client import (
     _escape_imap_string,
     _parse_seqnums,
     _parse_fetch_metadata,
+    _parse_list_line,
+    _parse_headers,
     IMAPClient,
 )
 
@@ -72,6 +74,48 @@ class TestParseSeqnums:
     def test_empty_lines_returns_empty(self):
         resp = SimpleNamespace(result="OK", lines=[])
         assert _parse_seqnums(resp) == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_list_line
+# ---------------------------------------------------------------------------
+class TestParseListLine:
+    def test_quoted_name(self):
+        assert _parse_list_line('(\\HasNoChildren) "/" "INBOX"') == "INBOX"
+
+    def test_unquoted_name(self):
+        assert _parse_list_line('(\\HasNoChildren) "/" Sent') == "Sent"
+
+    def test_subfolder(self):
+        assert _parse_list_line('(\\HasNoChildren) "/" "Folders/Sub"') == "Folders/Sub"
+
+    def test_command_line_skipped(self):
+        assert _parse_list_line("command completed") is None
+
+    def test_empty_line_skipped(self):
+        assert _parse_list_line("") is None
+
+    def test_non_matching_line(self):
+        assert _parse_list_line("garbage data") is None
+
+
+# ---------------------------------------------------------------------------
+# _parse_headers
+# ---------------------------------------------------------------------------
+class TestParseHeaders:
+    def test_parses_basic_headers(self):
+        raw = b"Subject: Hello\r\nFrom: a@b.com\r\n"
+        result = _parse_headers(raw)
+        assert result["subject"] == "Hello"
+        assert result["from"] == "a@b.com"
+
+    def test_empty_bytes(self):
+        assert _parse_headers(b"") == {}
+
+    def test_header_with_colon_in_value(self):
+        raw = b"Subject: Re: Hello\r\n"
+        result = _parse_headers(raw)
+        assert result["subject"] == "Re: Hello"
 
 
 # ---------------------------------------------------------------------------
