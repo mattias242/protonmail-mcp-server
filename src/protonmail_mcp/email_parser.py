@@ -25,6 +25,14 @@ def extract_addresses(header_value: str | None) -> list[str]:
     return [f"{name} <{addr}>" if name else addr for name, addr in addresses]
 
 
+def _safe_decode(payload: bytes, charset: str) -> str:
+    """Dekodar payload med angiven charset, faller tillbaka till utf-8 vid okänd encoding."""
+    try:
+        return payload.decode(charset, errors="replace")
+    except (LookupError, UnicodeDecodeError):
+        return payload.decode("utf-8", errors="replace")
+
+
 def get_body(msg: Message) -> dict[str, str]:
     plain = ""
     html = ""
@@ -39,20 +47,20 @@ def get_body(msg: Message) -> dict[str, str]:
             if content_type == "text/plain" and not plain:
                 payload = part.get_payload(decode=True)
                 if payload:
-                    plain = payload.decode(charset, errors="replace")
+                    plain = _safe_decode(payload, charset)
             elif content_type == "text/html" and not html:
                 payload = part.get_payload(decode=True)
                 if payload:
-                    html = payload.decode(charset, errors="replace")
+                    html = _safe_decode(payload, charset)
     else:
         charset = msg.get_content_charset() or "utf-8"
         payload = msg.get_payload(decode=True)
         if payload:
             content_type = msg.get_content_type()
             if content_type == "text/html":
-                html = payload.decode(charset, errors="replace")
+                html = _safe_decode(payload, charset)
             else:
-                plain = payload.decode(charset, errors="replace")
+                plain = _safe_decode(payload, charset)
 
     return {"plain": plain, "html": html}
 

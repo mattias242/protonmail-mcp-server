@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiosmtplib
 import pytest
 
 from protonmail_mcp.config import Settings
@@ -315,3 +316,51 @@ async def test_recipient_addresses_not_logged(settings: Settings, mock_smtp, cap
     assert "secret@example.com" not in log_text
     # But number of recipients should be logged
     assert "3" in log_text or "3 mottagare" in log_text
+
+
+# -------------------------------------------------------------------
+# Error paths
+# -------------------------------------------------------------------
+
+
+async def test_send_email_smtp_exception(settings: Settings, mock_smtp):
+    """SMTPException vid send_message ska bubbla upp."""
+    smtp_cls, smtp_instance = mock_smtp
+    smtp_instance.send_message = AsyncMock(
+        side_effect=aiosmtplib.SMTPException("Server rejected")
+    )
+    client = SMTPClient(settings)
+
+    with pytest.raises(aiosmtplib.SMTPException, match="Server rejected"):
+        await client.send_email(
+            to="alice@example.com",
+            subject="Fail",
+            body="This should fail",
+        )
+
+
+async def test_send_email_login_failure(settings: Settings, mock_smtp):
+    """SMTPAuthenticationError vid login ska bubbla upp."""
+    smtp_cls, smtp_instance = mock_smtp
+    smtp_instance.login = AsyncMock(
+        side_effect=aiosmtplib.SMTPAuthenticationError(535, "Authentication failed")
+    )
+    client = SMTPClient(settings)
+
+    with pytest.raises(aiosmtplib.SMTPAuthenticationError):
+        await client.send_email(
+            to="alice@example.com",
+            subject="Auth fail",
+            body="Login error",
+        )
+
+
+def test_build_message_empty_to_list():
+    """_build_message med tom to_list sätter tomt To-header."""
+    msg = _build_message(
+        from_addr="sender@test.com",
+        to_list=[],
+        subject="Empty",
+        body="No recipients",
+    )
+    assert msg["To"] == ""

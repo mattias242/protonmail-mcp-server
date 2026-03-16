@@ -137,3 +137,45 @@ class TestParseEmailEdgeCases:
     def test_attachments_empty_for_plain(self, sample_raw_email):
         result = parse_email(sample_raw_email)
         assert result["attachments"] == []
+
+    def test_corrupt_mime_data(self):
+        """Korrupt MIME-data (garbage bytes) ska inte krascha."""
+        garbage = b"\x80\x81\x82\xff\xfe\x00\x01random garbage data"
+        result = parse_email(garbage)
+        assert isinstance(result, dict)
+        assert "subject" in result
+        assert "body_plain" in result
+
+    def test_unknown_charset(self):
+        """Meddelande med okänd charset ska hanteras utan krasch."""
+        raw = (
+            "From: sender@example.com\r\n"
+            "To: recipient@example.com\r\n"
+            "Subject: Unknown charset\r\n"
+            "Content-Type: text/plain; charset=unknown-8bit\r\n"
+            "\r\n"
+            "Some content\r\n"
+        ).encode("utf-8")
+        result = parse_email(raw)
+        assert isinstance(result, dict)
+        # Ska kunna parsa utan krasch — body kan vara tom eller innehålla data
+        assert "body_plain" in result
+
+    def test_multipart_without_text_plain(self):
+        """Multipart-meddelande utan text/plain — body_plain ska vara tom."""
+        raw = (
+            "From: sender@example.com\r\n"
+            "To: recipient@example.com\r\n"
+            "Subject: HTML only multipart\r\n"
+            "MIME-Version: 1.0\r\n"
+            'Content-Type: multipart/alternative; boundary="bnd"\r\n'
+            "\r\n"
+            "--bnd\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n"
+            "\r\n"
+            "<p>Only HTML here</p>\r\n"
+            "--bnd--\r\n"
+        ).encode("utf-8")
+        result = parse_email(raw)
+        assert result["body_plain"] == ""
+        assert "<p>Only HTML here</p>" in result["body_html"]

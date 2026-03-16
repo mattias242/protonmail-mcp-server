@@ -1,39 +1,39 @@
 # protonmail-mcp
 
-MCP-server för ProtonMail via lokal Bridge. Låter Claude läsa, söka och skicka e-post direkt i din ProtonMail-brevlåda.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that lets Claude read, search, and send email through a locally running [ProtonMail Bridge](https://proton.me/mail/bridge).
 
-## Krav
+## Requirements
 
-- [ProtonMail Bridge](https://proton.me/mail/bridge) installerad och inloggad
+- [ProtonMail Bridge](https://proton.me/mail/bridge) installed and signed in
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
 
 ```bash
-git clone <repo>
-cd protonmailmcp
+git clone https://github.com/YOUR_USERNAME/protonmail-mcp
+cd protonmail-mcp
 uv sync
 cp .env.example .env
 ```
 
-Fyll i `.env`:
+Edit `.env`:
 
 ```bash
 PROTONMAIL_USERNAME=user@proton.me
-PROTONMAIL_PASSWORD=bridge-generated-password  # från Bridge-appen, inte ditt vanliga lösenord
+PROTONMAIL_PASSWORD=bridge-generated-password  # from the Bridge app, not your Proton password
 ```
 
-## Använda med Claude Desktop
+## Claude Desktop
 
-Lägg till i `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "protonmail": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/protonmailmcp", "protonmail-mcp"],
+      "args": ["run", "--directory", "/path/to/protonmail-mcp", "protonmail-mcp"],
       "env": {
         "PROTONMAIL_USERNAME": "user@proton.me",
         "PROTONMAIL_PASSWORD": "bridge-password"
@@ -43,33 +43,55 @@ Lägg till i `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-## Tillgängliga verktyg
+## Claude Code
 
-| Verktyg | Beskrivning |
-|---------|-------------|
-| `list_mailboxes` | Lista alla mappar/etiketter |
-| `list_emails` | Lista e-post med metadata (paginerat) |
-| `get_email` | Hämta fullständigt e-post via UID |
-| `search_emails` | Sök med from/subject/datum/oläst-filter |
-| `send_email` | Skicka e-post |
-| `mark_email_read` | Markera som läst |
-| `mark_email_unread` | Markera som oläst |
-| `move_email` | Flytta till annan mapp |
-| `delete_email` | Ta bort e-post |
-| `get_mailbox_status` | Räkna meddelanden/olästa |
+```bash
+claude mcp add protonmail -s user -- uv --directory /path/to/protonmail-mcp run protonmail-mcp
+```
 
-## Testa
+Then set credentials in `~/.claude.json` under the `protonmail` entry's `env` field.
+
+## Available tools
+
+| Tool | Description |
+|------|-------------|
+| `list_mailboxes` | List all folders/labels |
+| `list_emails` | List emails with metadata (paginated) |
+| `get_email` | Fetch full email content by UID |
+| `search_emails` | Search by from/subject/date/unread |
+| `send_email` | Send an email |
+| `mark_email_read` | Mark as read |
+| `mark_email_unread` | Mark as unread |
+| `move_email` | Move to another folder |
+| `delete_email` | Delete an email |
+| `get_mailbox_status` | Count messages and unread |
+
+## Testing
+
+```bash
+# Unit and BDD tests (no Bridge required)
+uv run pytest tests/unit/ tests/features/ -v
+
+# Integration tests (requires running Bridge + .env)
+uv run pytest tests/integration/ -m integration -v
+```
+
+Or test interactively with the MCP Inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector uv run protonmail-mcp
 ```
 
-Öppna `http://localhost:6274` → klicka Connect → Tools.
+Open `http://localhost:6274` → Connect → Tools.
 
-## Tekniska detaljer
+## Technical notes
 
-Bridge v3 på macOS exponerar:
-- IMAP på `127.0.0.1:1143` — plain TCP (STARTTLS tillgängligt men ej obligatoriskt)
-- SMTP på `127.0.0.1:1026` — direkt TLS med self-signed cert
+ProtonMail Bridge v3 exposes:
+- IMAP on `127.0.0.1:1143` — plain TCP
+- SMTP on `127.0.0.1:1026` — direct TLS with self-signed certificate
 
-IMAP-anslutningen är persistent (en per serversession). SMTP öppnas per utskick.
+The IMAP connection is persistent (one per server session). SMTP connects per send.
+
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE).

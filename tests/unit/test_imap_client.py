@@ -1,6 +1,7 @@
 """Tester för imap_client.py — validering, escaping, parsning och IMAP-operationer."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
 from types import SimpleNamespace
 
 from protonmail_mcp.imap_client import (
@@ -256,6 +257,19 @@ class TestGetMessage:
         with pytest.raises(ValueError, match="Ogiltigt UID"):
             await client.get_message("INBOX", "1:*")
 
+    @pytest.mark.asyncio
+    async def test_returns_none_when_ok_but_no_bytearray(self, client):
+        """OK-respons utan bytearray-data ska returnera None."""
+        client._client.uid = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '1 FETCH (BODY[] {0}',
+                ")",
+            ],
+        ))
+        result = await client.get_message("INBOX", "42")
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # IMAPClient.search_messages — escaping
@@ -314,3 +328,99 @@ class TestDeleteMessage:
         client._client.expunge = AsyncMock(return_value=SimpleNamespace(result="OK"))
         result = await client.delete_message("INBOX", "42")
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.connect — error paths
+# ---------------------------------------------------------------------------
+class TestConnectErrors:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        return IMAPClient(settings)
+
+    @pytest.mark.asyncio
+    async def test_timeout_during_connect(self, client, monkeypatch):
+        """asyncio.TimeoutError från wait_hello_from_server ska bubbla upp."""
+        import asyncio
+
+        mock_imap = AsyncMock()
+        mock_imap.wait_hello_from_server = AsyncMock(side_effect=asyncio.TimeoutError)
+
+        with patch("protonmail_mcp.imap_client.aioimaplib.IMAP4", return_value=mock_imap):
+            with pytest.raises(asyncio.TimeoutError):
+                await client.connect()
+
+    @pytest.mark.asyncio
+    async def test_login_failure(self, client, monkeypatch):
+        """Login som kastar exception ska bubbla upp."""
+        mock_imap = AsyncMock()
+        mock_imap.wait_hello_from_server = AsyncMock()
+        mock_imap.login = AsyncMock(side_effect=Exception("LOGIN failed"))
+
+        with patch("protonmail_mcp.imap_client.aioimaplib.IMAP4", return_value=mock_imap):
+            with pytest.raises(Exception, match="LOGIN failed"):
+                await client.connect()
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.list_mailboxes — BAD result
+# ---------------------------------------------------------------------------
+class TestListMailboxesBadResult:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_bad_result_returns_empty(self, client):
+        """list() med result='BAD' ska returnera tom lista."""
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="BAD",
+            lines=["some error"],
+        ))
+        result = await client.list_mailboxes()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# IMAPClient.search_messages — empty search response
+# ---------------------------------------------------------------------------
+class TestSearchMessagesEmpty:
+    @pytest.fixture
+    def client(self, monkeypatch):
+        monkeypatch.setenv("PROTONMAIL_USERNAME", "user")
+        monkeypatch.setenv("PROTONMAIL_PASSWORD", "pass")
+        from protonmail_mcp.config import Settings
+        settings = Settings()
+        imap = IMAPClient(settings)
+        imap._client = AsyncMock()
+        return imap
+
+    @pytest.mark.asyncio
+    async def test_empty_search_returns_empty(self, client):
+        """search som returnerar OK men tom rad ska ge tom lista."""
+        client._client.search = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[b""],
+        ))
+        result = await client.search_messages("INBOX")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_search_no_result_returns_empty(self, client):
+        """search som returnerar NO ska ge tom lista."""
+        client._client.search = AsyncMock(return_value=SimpleNamespace(
+            result="NO",
+            lines=[],
+        ))
+        result = await client.search_messages("INBOX", from_addr="nobody@example.com")
+        assert result == []

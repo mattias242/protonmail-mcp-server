@@ -24,6 +24,9 @@ packages = ["src/protonmail_mcp"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: Integrationstester mot en riktig ProtonMail Bridge",
+]
 
 [dependency-groups]
 dev = [
