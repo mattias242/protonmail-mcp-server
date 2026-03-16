@@ -1,4 +1,6 @@
 """Tester for email_parser.py."""
+import pytest
+
 from protonmail_mcp.email_parser import (
     decode_header_value,
     extract_addresses,
@@ -34,9 +36,11 @@ class TestParseEmailPlainText:
 class TestParseEmailHtml:
     """parse_email() med HTML-only mail."""
 
-    def test_body_plain_empty(self, sample_html_email):
+    def test_body_plain_fallback_from_html(self, sample_html_email):
+        """Med default body_format='text' strippas HTML som fallback."""
         result = parse_email(sample_html_email)
-        assert result["body_plain"] == ""
+        assert "Hello!" in result["body_plain"]
+        assert "<p>" not in result["body_plain"]
 
     def test_body_html_contains_html(self, sample_html_email):
         result = parse_email(sample_html_email)
@@ -162,7 +166,7 @@ class TestParseEmailEdgeCases:
         assert "body_plain" in result
 
     def test_multipart_without_text_plain(self):
-        """Multipart-meddelande utan text/plain — body_plain ska vara tom."""
+        """Multipart utan text/plain — body_plain fallback från HTML."""
         raw = (
             "From: sender@example.com\r\n"
             "To: recipient@example.com\r\n"
@@ -177,5 +181,77 @@ class TestParseEmailEdgeCases:
             "--bnd--\r\n"
         ).encode("utf-8")
         result = parse_email(raw)
-        assert result["body_plain"] == ""
+        assert "Only HTML here" in result["body_plain"]
+        assert "<p>" not in result["body_plain"]
         assert "<p>Only HTML here</p>" in result["body_html"]
+
+
+class TestBodyFormatAndMaxLength:
+    """Tester för body_format och max_length parametrar."""
+
+    def test_body_format_text_default(self, sample_raw_email):
+        """text-läge (default) returnerar plain text."""
+        result = parse_email(sample_raw_email)
+        assert "Hello world!" in result["body_plain"]
+
+    def test_body_format_full_no_truncation(self, sample_raw_email):
+        """full ignorerar max_length — returnerar hela body."""
+        result = parse_email(sample_raw_email, body_format="full", max_length=5)
+        # full ska inte trunkera oavsett max_length
+        assert "Hello world!" in result["body_plain"]
+        assert "[..." not in result["body_plain"]
+
+    def test_body_format_stripped_removes_quotes(self):
+        """Rader med > tas bort i stripped-läge."""
+        raw = (
+            "From: sender@example.com\r\n"
+            "To: recipient@example.com\r\n"
+            "Subject: Reply\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "\r\n"
+            "My reply\r\n"
+            "> Original message\r\n"
+            "> Another quoted line\r\n"
+        ).encode("utf-8")
+        result = parse_email(raw, body_format="stripped", max_length=None)
+        assert "My reply" in result["body_plain"]
+        assert "Original message" not in result["body_plain"]
+        assert "Another quoted line" not in result["body_plain"]
+
+    def test_body_format_stripped_removes_signature(self):
+        """Signaturblock efter '-- ' tas bort i stripped-läge."""
+        raw = (
+            "From: sender@example.com\r\n"
+            "To: recipient@example.com\r\n"
+            "Subject: Signed\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "\r\n"
+            "Main content\r\n"
+            "-- \r\n"
+            "John Doe\r\n"
+            "Company Inc.\r\n"
+        ).encode("utf-8")
+        result = parse_email(raw, body_format="stripped", max_length=None)
+        assert "Main content" in result["body_plain"]
+        assert "John Doe" not in result["body_plain"]
+        assert "Company Inc." not in result["body_plain"]
+
+    def test_max_length_truncates_with_hint(self, sample_raw_email):
+        """Trunkering lägger till '[...N characters remaining]'."""
+        result = parse_email(sample_raw_email, body_format="text", max_length=5)
+        assert len(result["body_plain"]) > 5  # inkl. hint
+        assert "[..." in result["body_plain"]
+        assert "characters remaining]" in result["body_plain"]
+
+    def test_max_length_none_no_truncation(self, sample_raw_email):
+        """max_length=None → ingen trunkering."""
+        result = parse_email(sample_raw_email, body_format="text", max_length=None)
+        assert "Hello world!" in result["body_plain"]
+        assert "[..." not in result["body_plain"]
+
+    def test_body_format_text_strips_html_fallback(self, sample_html_email):
+        """Ingen plain text-del → strippa HTML-taggar och returnera text."""
+        result = parse_email(sample_html_email, body_format="text", max_length=None)
+        assert "Hello!" in result["body_plain"]
+        assert "<p>" not in result["body_plain"]
+        assert "<html>" not in result["body_plain"]

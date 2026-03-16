@@ -1,6 +1,7 @@
 import email
 import email.header
 import email.utils
+import re
 from email.message import Message
 from typing import Any
 
@@ -82,9 +83,59 @@ def get_attachments(msg: Message) -> list[dict[str, Any]]:
     return attachments
 
 
-def parse_email(raw: bytes) -> dict[str, Any]:
+def _strip_html(html: str) -> str:
+    """Ta bort HTML-taggar och returnera ren text."""
+    return re.sub(r"<[^>]+>", "", html).strip()
+
+
+def _strip_quotes_and_signature(text: str) -> str:
+    """Ta bort citat (rader som börjar med >) och signaturblock (efter '-- ')."""
+    lines = text.splitlines()
+    result = []
+    for line in lines:
+        # Signaturblock: allt efter "-- " eller "--" på egen rad
+        if line.rstrip() == "-- " or line.rstrip() == "--":
+            break
+        # Hoppa över citerade rader
+        if line.startswith(">"):
+            continue
+        result.append(line)
+    return "\n".join(result)
+
+
+def _truncate(text: str, max_length: int | None) -> str:
+    """Trunkera text till max_length tecken med hint om kvarvarande."""
+    if max_length is None or len(text) <= max_length:
+        return text
+    remaining = len(text) - max_length
+    return text[:max_length] + f"\n[...{remaining} characters remaining]"
+
+
+def parse_email(
+    raw: bytes,
+    body_format: str = "text",
+    max_length: int | None = 500,
+) -> dict[str, Any]:
     msg = email.message_from_bytes(raw)
     body = get_body(msg)
+
+    body_plain = body["plain"]
+    body_html = body["html"]
+
+    if body_format == "full":
+        # Returnera råa body utan trunkering
+        pass
+    elif body_format == "text":
+        # Om ingen plain text, strippa HTML-taggar som fallback
+        if not body_plain and body_html:
+            body_plain = _strip_html(body_html)
+        body_plain = _truncate(body_plain, max_length)
+    elif body_format == "stripped":
+        if not body_plain and body_html:
+            body_plain = _strip_html(body_html)
+        body_plain = _strip_quotes_and_signature(body_plain)
+        body_plain = _truncate(body_plain, max_length)
+
     return {
         "message_id": msg.get("Message-ID", ""),
         "subject": decode_header_value(msg.get("Subject")),
@@ -94,8 +145,8 @@ def parse_email(raw: bytes) -> dict[str, Any]:
         "bcc": extract_addresses(msg.get("Bcc")),
         "reply_to": extract_addresses(msg.get("Reply-To")),
         "date": msg.get("Date", ""),
-        "body_plain": body["plain"],
-        "body_html": body["html"],
+        "body_plain": body_plain,
+        "body_html": body_html,
         "attachments": get_attachments(msg),
         "headers": dict(msg.items()),
     }
