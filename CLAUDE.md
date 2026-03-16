@@ -42,6 +42,43 @@ src/protonmail_mcp/
 └── tools/           # 10 MCP-verktyg
 ```
 
+## Arbetssätt — TDD + BDD
+
+Vi följer strikt **RED → GREEN → BLUE**-cykeln för varje ändring, oavsett hur liten:
+
+1. **RED** — Skriv ett misslyckat test (pytest/BDD-scenario) som beskriver det önskade beteendet. Verifiera att det faktiskt misslyckas innan du skriver produktionskod.
+2. **GREEN** — Skriv minimal kod för att få testet att gå igenom. Inget mer. Commita vid GREEN.
+3. **BLUE** (refactor) — Städa upp koden utan att ändra beteende. Alla tester ska fortfarande vara gröna efter refactor.
+
+**Commit vid varje GREEN** — inte vid BLUE om inget substantiellt ändrats.
+
+### Teststruktur
+
+```
+tests/
+├── unit/          # Snabba enhetstester (ingen Bridge-anslutning)
+├── integration/   # Tester mot riktig Bridge (kräver .env)
+└── features/      # BDD-scenarion (pytest-bdd / behave)
+```
+
+### Köra tester
+
+```bash
+uv run pytest tests/unit/          # snabba, alltid
+uv run pytest tests/integration/   # kräver Bridge igång
+uv run pytest                      # allt
+```
+
+### BDD-scenarion skrivs i Given/When/Then
+
+```gherkin
+Scenario: Lista olästa mail i INBOX
+  Given att Bridge är ansluten
+  When jag anropar search_emails med unseen=true
+  Then ska resultatet vara en lista med UID:n
+  And alla UID:n ska vara heltal
+```
+
 ## Säkerhet
 
 - UID-parametrar valideras mot `^\d+$` (förhindrar sequence-set-injektion)
