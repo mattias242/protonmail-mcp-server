@@ -1,6 +1,7 @@
 from mcp.server.fastmcp import Context
 
-from ..server import mcp, AppContext
+from ..server import mcp
+from . import _get_app
 
 
 @mcp.tool()
@@ -26,7 +27,7 @@ async def search_emails(
     Returns:
         Lista med UID:n för matchande e-post
     """
-    app: AppContext = ctx.request_context.lifespan_context
+    app = _get_app(ctx)
     return await app.imap.search_messages(
         mailbox,
         from_addr=from_addr,

@@ -1,6 +1,7 @@
 from mcp.server.fastmcp import Context
 
-from ..server import mcp, AppContext
+from ..server import mcp
+from . import _get_app
 
 
 @mcp.tool()
@@ -28,7 +29,7 @@ async def send_email(
     Returns:
         True om e-posten skickades utan fel
     """
-    app: AppContext = ctx.request_context.lifespan_context
+    app = _get_app(ctx)
     return await app.smtp.send_email(
         to=to,
         subject=subject,

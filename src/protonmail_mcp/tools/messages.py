@@ -1,7 +1,8 @@
 from mcp.server.fastmcp import Context
 
-from ..server import mcp, AppContext
+from ..server import mcp
 from ..email_parser import parse_email
+from . import _get_app
 
 
 @mcp.tool()
@@ -18,7 +19,7 @@ async def list_emails(
         limit: Antal e-post att returnera (standard: 20)
         offset: Hoppa över de första N e-posten (standard: 0)
     """
-    app: AppContext = ctx.request_context.lifespan_context
+    app = _get_app(ctx)
     return await app.imap.list_messages(mailbox, limit=limit, offset=offset)
 
 
@@ -30,7 +31,7 @@ async def get_email(ctx: Context, uid: str, mailbox: str = "INBOX") -> dict | No
         uid: E-postets UID
         mailbox: Mappnamn (standard: INBOX)
     """
-    app: AppContext = ctx.request_context.lifespan_context
+    app = _get_app(ctx)
     raw = await app.imap.get_message(mailbox, uid)
     if raw is None:
         return None
