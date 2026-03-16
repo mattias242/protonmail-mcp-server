@@ -1,6 +1,11 @@
 [project]
 name = "protonmail-mcp"
 version = "0.1.0"
+description = "MCP server for ProtonMail Bridge — lets Claude read, search and send email via local Bridge"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Mattias Wahlberg", email = "mattias.wahlberg@proton.me" }]
+keywords = ["mcp", "protonmail", "email", "claude", "llm"]
 requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.26.0",
@@ -10,6 +15,11 @@ dependencies = [
     "pydantic-settings>=2.11.0",
     "python-dotenv>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mattias242/protonmail-mcp-server"
+Repository = "https://github.com/mattias242/protonmail-mcp-server"
+Issues = "https://github.com/mattias242/protonmail-mcp-server/issues"
 
 [project.scripts]
 protonmail-mcp = "protonmail_mcp.server:main"
