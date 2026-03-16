@@ -98,7 +98,8 @@ class IMAPClient:
             for line in resp.lines:
                 name = _parse_list_line(_decode(line))
                 if name:
-                    mailboxes.append({"name": name})
+                    mb_type = "label" if name.startswith("Labels/") else "folder"
+                    mailboxes.append({"name": name, "type": mb_type})
         return mailboxes
 
     async def list_messages(

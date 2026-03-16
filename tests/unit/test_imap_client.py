@@ -213,6 +213,57 @@ class TestListMailboxes:
         result = await client.list_mailboxes()
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_list_mailboxes_returns_type_folder(self, client):
+        """Vanlig mapp ska ha type='folder'."""
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '(\\HasNoChildren) "/" "INBOX"',
+                'command completed',
+            ],
+        ))
+        result = await client.list_mailboxes()
+        assert len(result) == 1
+        assert result[0] == {"name": "INBOX", "type": "folder"}
+
+    @pytest.mark.asyncio
+    async def test_list_mailboxes_returns_type_label(self, client):
+        """Labels/Arbete ska ha type='label'."""
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '(\\HasNoChildren) "/" "Labels/Arbete"',
+                'command completed',
+            ],
+        ))
+        result = await client.list_mailboxes()
+        assert len(result) == 1
+        assert result[0] == {"name": "Labels/Arbete", "type": "label"}
+
+    @pytest.mark.asyncio
+    async def test_list_mailboxes_mixed(self, client):
+        """Blandat mappar och labels ska ge rätt type på alla."""
+        client._client.list = AsyncMock(return_value=SimpleNamespace(
+            result="OK",
+            lines=[
+                '(\\HasNoChildren) "/" "INBOX"',
+                '(\\HasNoChildren) "/" "Sent"',
+                '(\\HasNoChildren) "/" "Labels/Arbete"',
+                '(\\HasNoChildren) "/" "Labels/Privat"',
+                '(\\HasNoChildren) "/" "Folders/Projekt"',
+                'command completed',
+            ],
+        ))
+        result = await client.list_mailboxes()
+        assert len(result) == 5
+        types = {m["name"]: m["type"] for m in result}
+        assert types["INBOX"] == "folder"
+        assert types["Sent"] == "folder"
+        assert types["Labels/Arbete"] == "label"
+        assert types["Labels/Privat"] == "label"
+        assert types["Folders/Projekt"] == "folder"
+
 
 # ---------------------------------------------------------------------------
 # IMAPClient.get_message
