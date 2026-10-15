@@ -10,11 +10,11 @@ requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]>=1.26.0",
     "aioimaplib>=2.0.1",
-    "aiosmtplib>=4.0.0",
+    "aiosmtplib>=5.1.2",
     "pydantic>=2.11.0",
-    "pydantic-settings>=2.11.0",
+    "pydantic-settings>=2.14.2",
     "python-dotenv>=1.0.0",
-    "idna>=3.7",
+    "idna>=3.15",
 ]
 
 [project.urls]
@@ -44,7 +44,7 @@ markers = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.25.0",
     "pytest-bdd>=7.0.0",
     "pytest-mock>=3.14.0",
