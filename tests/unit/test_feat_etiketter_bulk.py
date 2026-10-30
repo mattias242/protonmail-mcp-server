@@ -172,7 +172,10 @@ class TestDelete:
 
 class TestToolSchema:
     @pytest.mark.parametrize("name", BULK_TOOLS)
-    async def test_uid_is_string_or_list_of_at_most_100(self, name):
+    async def test_uid_is_string_or_list_of_at_most_100(self, name, monkeypatch):
+        from tests.llm_kontrakt_support import use_test_settings
+
+        use_test_settings(monkeypatch)  # tools/list döljer annars move_email/delete_email utan inställningar
         tools = {t.name: t for t in await mcp.list_tools()}
         schema = sdk.wire(tools[name])["inputSchema"]
         uid = schema["properties"]["uid"]

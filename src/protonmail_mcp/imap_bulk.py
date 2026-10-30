@@ -253,7 +253,7 @@ async def _move_found(imap: IMAPClient, mailbox: str, uids: list[str], target: s
 
 
 @_serialized
-@policy.write_operation("move")
+@policy.write_operation("move", destructive=True)
 async def move(imap: IMAPClient, mailbox: str, uids: list[str], target: str) -> BulkResult:
     """Flyttar flera mejl med ett UID MOVE. Samma vakter som move_message, för alla UID:n."""
     uids = validate_uids(uids)
@@ -264,7 +264,7 @@ async def move(imap: IMAPClient, mailbox: str, uids: list[str], target: str) -> 
 
 
 @_serialized
-@policy.write_operation("delete")
+@policy.write_operation("delete", destructive=True)
 async def delete(imap: IMAPClient, mailbox: str, uids: list[str], permanent: bool = False) -> BulkResult:
     """Flyttar flera mejl till Trash, eller raderar dem permanent ur Trash/Drafts.
 

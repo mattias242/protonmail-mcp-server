@@ -104,8 +104,22 @@ class _GuardedMCPServer(MCPServer):
     """MCP-server som vägrar verktyg som policyn inte tillåter, innan de körs.
 
     Den egentliga spärren sitter i IMAP- och SMTP-klienterna (policy.py);
-    här vägras t.ex. reply_to_email redan innan originalet läses.
+    här vägras t.ex. reply_to_email redan innan originalet läses. Verktyg
+    som inställningarna stänger av helt (policy.hidden_tools, t.ex.
+    PROTONMAIL_ALLOW_DESTRUCTIVE=false) utelämnas dessutom ur tools/list,
+    så att modellen aldrig ser dem; anropas de ändå vägras de som vanligt.
     """
+
+    async def list_tools(self):
+        from . import config, policy
+
+        try:
+            settings = config.get_settings()
+        except Exception as exc:  # noqa: BLE001 — efter lifespan kan det inte hända; dölj hellre än visa
+            logger.warning("Kunde inte läsa konfigurationen vid tools/list, döljer avstängbara verktyg: %s", exc)
+            settings = None
+        hidden = policy.hidden_tools(settings)
+        return [tool for tool in await super().list_tools() if tool.name not in hidden]
 
     async def call_tool(self, name, arguments, context=None):
         from . import audit, config, policy

@@ -140,6 +140,17 @@ class Settings(BaseSettings):
     #       själv granskar och skickar från Proton.
     #   "disabled" — även utkasten vägras.
     send_mode: Literal["send", "draft_only", "disabled"] = "send"
+    # PROTONMAIL_ALLOW_DESTRUCTIVE=false: verktygen som flyttar, raderar, tar
+    # bort eller döper om (move_email, delete_email, delete_folder,
+    # rename_folder, remove_label — de med destructiveHint) utelämnas ur
+    # verktygslistan, så att modellen aldrig ser dem, och vägras om de ändå
+    # anropas, även permanent radering ur Trash. Läsning, läst/oläst, stjärna, add_label,
+    # create_folder, utkast och skick (enligt PROTONMAIL_SEND_MODE) fungerar.
+    # Tillsammans med SEND_MODE=draft_only ger det "läsa och skriva utkast,
+    # men inget oåterkalleligt", t.ex. för en agent utan uppsikt. update_draft
+    # får fortfarande lägga sin gamla version i Trash, och send_draft ta bort
+    # sitt skickade utkast. Standard: true.
+    allow_destructive: bool = True
     # PROTONMAIL_ALLOWED_RECIPIENTS: kommaseparerad lista med adresser
     # (anna@exempel.se) och/eller domäner (@exempel.se). När den är satt måste
     # VARJE mottagare i ett skick (To, Cc och Bcc, även i send_draft och

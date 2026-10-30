@@ -789,7 +789,7 @@ class IMAPClient:
         return True
 
     @_serialized
-    @policy.write_operation("move_message")
+    @policy.write_operation("move_message", destructive=True)
     async def move_message(self, mailbox: str, uid: str, target: str) -> bool | dict[str, Any]:
         """Flyttar ett mejl med UID MOVE. Kastar ValueError om flytten avvisas eller misslyckas.
 
@@ -830,7 +830,7 @@ class IMAPClient:
         return True
 
     @_serialized
-    @policy.write_operation("delete_message")
+    @policy.write_operation("delete_message", destructive=True)
     async def delete_message(self, mailbox: str, uid: str, permanent: bool = False) -> bool | dict[str, Any]:
         """Flyttar ett mejl till Trash, eller raderar det permanent ur Trash/Drafts.
 
@@ -909,7 +909,7 @@ class IMAPClient:
         return True
 
     @_serialized
-    @policy.write_operation("delete_folder")
+    @policy.write_operation("delete_folder", destructive=True)
     async def delete_folder(self, name: str, force: bool = False) -> bool:
         """Tar bort en mapp eller etikett; vägrar om den inte är tom, utom med force.
 
@@ -957,7 +957,7 @@ class IMAPClient:
             )
 
     @_serialized
-    @policy.write_operation("rename_folder")
+    @policy.write_operation("rename_folder", destructive=True)
     async def rename_folder(self, old_name: str, new_name: str) -> bool:
         old_kind = _check_user_folder(old_name)
         new_kind = _check_user_folder(new_name)
