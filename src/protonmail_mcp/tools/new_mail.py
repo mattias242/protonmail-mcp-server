@@ -15,6 +15,7 @@ så ett påhittat högt since_uid kan inte dölja kommande mejl.
 import asyncio
 from typing import Annotated, Any
 
+from ..i18n import _
 from .._sdk import Context
 from pydantic import Field
 
@@ -130,36 +131,42 @@ def _note(app, mailbox: str, result: dict[str, Any]) -> str | None:
     if result["source"] == "imap":
         watcher = _watcher(app)
         if watcher is None or not watcher.enabled:
-            notes.append("Bevakningen är avstängd (PROTONMAIL_WATCH_ENABLED), så Bridge "
-                         "tillfrågades direkt (UID SEARCH).")
+            notes.append(_("Bevakningen är avstängd (PROTONMAIL_WATCH_ENABLED), så Bridge "
+                         "tillfrågades direkt (UID SEARCH)."))
         elif mailbox_key(mailbox) not in map(mailbox_key, watcher.mailboxes):
-            notes.append(f"{mailbox} bevakas inte (PROTONMAIL_WATCH_MAILBOXES), så Bridge "
-                         "tillfrågades direkt (UID SEARCH).")
+            notes.append(_("{mailbox} bevakas inte (PROTONMAIL_WATCH_MAILBOXES), så Bridge "
+                         "tillfrågades direkt (UID SEARCH).",
+                         mailbox=mailbox))
         else:
             error = watcher.status(mailbox)["last_error"]
-            notes.append("Bevakningen är inte ansluten just nu"
+            notes.append(_("Bevakningen är inte ansluten just nu")
                          + (f" ({error})" if error else "")
-                         + ", så Bridge tillfrågades direkt (UID SEARCH).")
+                         + _(", så Bridge tillfrågades direkt (UID SEARCH)."))
     if result.get("reset") and result.get("recovered"):
-        notes.append(f"UIDVALIDITY för {mailbox} har ändrats medan bevakningen var nere (Bridge "
+        notes.append(_("UIDVALIDITY för {mailbox} har ändrats medan bevakningen var nere (Bridge "
                      "har synkat om mappen), så de gamla UID:na gäller inte. Mejl som kom under "
                      "avbrottet har letats fram efter ankomsttid och visas här; kontrollera med "
-                     "list_emails om något saknas.")
+                     "list_emails om något saknas.",
+                     mailbox=mailbox))
     elif result.get("reset"):
-        notes.append(f"UIDVALIDITY för {mailbox} har ändrats (Bridge har synkat om mappen), så "
+        notes.append(_("UIDVALIDITY för {mailbox} har ändrats (Bridge har synkat om mappen), så "
                      "de gamla UID:na gäller inte. Vattenmärket är satt om; mejl som kom under "
-                     "bytet visas inte här — använd list_emails.")
+                     "bytet visas inte här — använd list_emails.",
+                     mailbox=mailbox))
     elif result["clamped"] and result["since_uid_given"]:
-        notes.append(f"since_uid {result['after']} är högre än det senaste mejlet i {mailbox} "
-                     f"(UID {result['last_uid']}), så det finns inga mejl efter det.")
+        notes.append(_("since_uid {after} är högre än det senaste mejlet i {mailbox} "
+                     "(UID {last_uid}), så det finns inga mejl efter det.",
+                     after=result['after'], mailbox=mailbox, last_uid=result['last_uid']))
     elif result["clamped"]:
-        notes.append(f"Vattenmärket för {mailbox} låg förbi det senaste mejlet och är satt till "
-                     f"UID {result['last_uid']}. Kontrollera med list_emails om något mejl har missats.")
+        notes.append(_("Vattenmärket för {mailbox} låg förbi det senaste mejlet och är satt till "
+                     "UID {last_uid}. Kontrollera med list_emails om något mejl har missats.",
+                     mailbox=mailbox, last_uid=result['last_uid']))
     elif result["after"] is None:
-        notes.append(f"Första anropet för {mailbox}: inga mejl visas, men vattenmärket är satt "
-                     f"till UID {result['last_uid']}. Nästa anrop visar mejl som kommit efter det.")
+        notes.append(_("Första anropet för {mailbox}: inga mejl visas, men vattenmärket är satt "
+                     "till UID {last_uid}. Nästa anrop visar mejl som kommit efter det.",
+                     mailbox=mailbox, last_uid=result['last_uid']))
     if result["has_more"]:
-        notes.append("Fler nya mejl finns: anropa igen för att få nästa omgång.")
+        notes.append(_("Fler nya mejl finns: anropa igen för att få nästa omgång."))
     return " ".join(notes) or None
 
 
@@ -276,8 +283,9 @@ async def wait_for_new_email(
             result = await _within(_collect(app, mailbox, None), deadline + DEADLINE_MARGIN - loop.time())
         except _Overdue:
             raise asyncio.TimeoutError(
-                f"ProtonMail Bridge svarade inte inom {timeout_seconds} s (timeout_seconds) — "
-                "frågan avbröts. Kontrollera att Bridge körs och inte har hängt sig."
+                _("ProtonMail Bridge svarade inte inom {timeout_seconds} s (timeout_seconds) — "
+                "frågan avbröts. Kontrollera att Bridge körs och inte har hängt sig.",
+                timeout_seconds=timeout_seconds)
             ) from None
         if result.get("reset") and reset is None:
             reset = {"reset": True, "recovered": result.get("recovered", False)}

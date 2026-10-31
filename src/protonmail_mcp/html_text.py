@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
+from .i18n import _
+
 # Innehåll som aldrig visas för läsaren
 _SKIP = {"style", "script", "template", "title"}
 # Ger radbrytning före och efter
@@ -322,7 +324,7 @@ def _offscreen(style: dict[str, str]) -> str | None:
     if style.get("position") in ("absolute", "fixed"):
         for prop in ("left", "top"):
             if (px := _length_px(style.get(prop, ""))) is not None and px <= _OFFSCREEN:
-                return "utanför skärmen"
+                return _("utanför skärmen")
         clip = _compact(style.get("clip", ""))
         if clip.startswith("rect(") and clip.endswith(")"):
             values = [v for v in re.split(r"[,\s]+", style["clip"][5:-1].strip()) if v]
@@ -330,7 +332,7 @@ def _offscreen(style: dict[str, str]) -> str | None:
             if len(values) == 4 and all(px is not None and px <= 1 for px in lengths):
                 return "clip"
     if (px := _length_px(style.get("text-indent", ""))) is not None and px <= _OFFSCREEN:
-        return "utanför skärmen"
+        return _("utanför skärmen")
     clip_path = _compact(style.get("clip-path", ""))
     if m := re.match(r"inset\(([0-9.]+)%", clip_path):
         if float(m.group(1)) >= 50:
@@ -407,7 +409,7 @@ def _soft_reason(font_zero: bool, vis_hidden: bool, color, bg, color_over_bg: bo
     if color == _TRANSPARENT:
         return "color:transparent"
     if color_over_bg and isinstance(color, tuple) and isinstance(bg, tuple) and _close(color, bg):
-        return "färg=bakgrund"
+        return _("färg=bakgrund")
     return None
 
 

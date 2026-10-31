@@ -49,6 +49,7 @@ from typing import Any
 
 from aioimaplib.aioimaplib import STOP_WAIT_SERVER_PUSH, Abort
 
+from .i18n import _
 from .config import Settings
 from .imap_client import (
     _FETCH_CHUNK_SIZE,
@@ -193,7 +194,7 @@ async def select_info(imap: IMAPClient, mailbox: str) -> MailboxInfo:
         highest = 0
         if info.exists:
             resp = await imap._uid("fetch", "*", "(UID)")
-            _require_ok(resp, f"Hämtningen av högsta UID i {mailbox}")
+            _require_ok(resp, _("Hämtningen av högsta UID i {mailbox}", mailbox=mailbox))
             uids = [int(m.group(1)) for line in resp.lines if not isinstance(line, bytearray)
                     for m in _UID_ITEM_RE.finditer(_decode(line))]
             highest = max(uids, default=0)
@@ -211,7 +212,7 @@ async def new_uids(imap: IMAPClient, after: int) -> list[int]:
     resp = await imap._client.uid_search("UID", f"{after + 1}:*")
     if resp.result == "NO" and _NO_SUCH_MESSAGE_RE.search(_response_text(resp)):
         return []
-    _require_ok(resp, "Sökningen efter nya mejl")
+    _require_ok(resp, _("Sökningen efter nya mejl"))
     # aioimaplib tar bort "* SEARCH": första raden är bara UID:na
     return sorted({u for u in map(int, _parse_seqnums(resp)) if u > after})
 
@@ -226,7 +227,7 @@ async def fetch_metadata(imap: IMAPClient, mailbox: str, uids: list[int]) -> lis
     for start in range(0, len(uids), _FETCH_CHUNK_SIZE):
         chunk = uids[start:start + _FETCH_CHUNK_SIZE]
         resp = await imap._uid("fetch", ",".join(map(str, chunk)), _METADATA_ITEMS)
-        _require_ok(resp, f"Hämtningen av nya mejl i {mailbox}")
+        _require_ok(resp, _("Hämtningen av nya mejl i {mailbox}", mailbox=mailbox))
         msgs += [m for m in _parse_fetch_metadata(resp.lines) if m["uid"] in wanted]
     return [{**m, "mailbox": mailbox} for m in _sort_newest_first(msgs)]
 
@@ -245,13 +246,13 @@ async def recover_messages(
     resp = await imap._client.uid_search("SINCE", _imap_date(cutoff - timedelta(days=1)))
     if resp.result == "NO" and _NO_SUCH_MESSAGE_RE.search(_response_text(resp)):
         return []
-    _require_ok(resp, "Sökningen efter mejl som kom under avbrottet")
+    _require_ok(resp, _("Sökningen efter mejl som kom under avbrottet"))
     uids = sorted({int(u) for u in _parse_seqnums(resp)})
     arrived: list[int] = []
     for start in range(0, len(uids), _FETCH_CHUNK_SIZE):
         chunk = uids[start:start + _FETCH_CHUNK_SIZE]
         resp = await imap._uid("fetch", ",".join(map(str, chunk)), "(UID INTERNALDATE)")
-        _require_ok(resp, f"Hämtningen av ankomsttider i {mailbox}")
+        _require_ok(resp, _("Hämtningen av ankomsttider i {mailbox}", mailbox=mailbox))
         for line in resp.lines:
             if isinstance(line, bytearray):
                 continue
@@ -339,7 +340,7 @@ class MailWatcher:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         if not 0 < renew_seconds < _IDLE_LIMIT_SECONDS:
-            raise ValueError("IDLE måste förnyas inom 29 minuter (Bridge kopplar ner den då)")
+            raise ValueError(_("IDLE måste förnyas inom 29 minuter (Bridge kopplar ner den då)"))
         self._settings = settings
         self.enabled = settings.watch_enabled
         self.mailboxes = settings.watch_mailbox_list
@@ -534,7 +535,7 @@ class MailWatcher:
                 client = imap._client
                 _watch_pushes(client)
                 if "IDLE" not in getattr(client.protocol, "capabilities", ()):
-                    raise ConnectionError("ProtonMail Bridge stöder inte IDLE")
+                    raise ConnectionError(_("ProtonMail Bridge stöder inte IDLE"))
                 info = await select_info(imap, state.name)
                 await self._sync(state, imap, info)
                 logger.info("Bevakar %s efter nya mejl (IDLE)", state.name)
@@ -652,10 +653,10 @@ class MailWatcher:
             idle = await _with_timeout(client.idle_start(timeout=self._renew), imap.timeout)
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError(
-                f"ProtonMail Bridge bekräftade inte IDLE inom {imap.timeout:g} s"
+                _("ProtonMail Bridge bekräftade inte IDLE inom {timeout:g} s", timeout=imap.timeout)
             ) from None
         except Abort:
-            raise ConnectionError("ProtonMail Bridge nekade IDLE") from None
+            raise ConnectionError(_("ProtonMail Bridge nekade IDLE")) from None
         if state is not None:
             state.connected, state.last_error = True, None
         new_mail = False
@@ -663,10 +664,10 @@ class MailWatcher:
         try:
             while True:
                 push = asyncio.ensure_future(client.wait_server_push(timeout=self._renew + imap.timeout))
-                done, _ = await asyncio.wait({push, idle}, return_when=asyncio.FIRST_COMPLETED)
+                done, _pending = await asyncio.wait({push, idle}, return_when=asyncio.FIRST_COMPLETED)
                 if push not in done:
                     idle.result()  # ConnectionError om anslutningen bröts
-                    raise ConnectionError("ProtonMail Bridge avslutade IDLE")
+                    raise ConnectionError(_("ProtonMail Bridge avslutade IDLE"))
                 lines = push.result()
                 if lines == STOP_WAIT_SERVER_PUSH:
                     break  # dags att förnya
@@ -682,7 +683,7 @@ class MailWatcher:
                 await _with_timeout(idle, imap.timeout)
             except asyncio.TimeoutError:
                 raise asyncio.TimeoutError(
-                    f"ProtonMail Bridge avslutade inte IDLE inom {imap.timeout:g} s"
+                    _("ProtonMail Bridge avslutade inte IDLE inom {timeout:g} s", timeout=imap.timeout)
                 ) from None
         return new_mail
 

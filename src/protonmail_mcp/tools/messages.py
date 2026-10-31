@@ -1,5 +1,6 @@
 from typing import Annotated, Literal
 
+from ..i18n import _
 from .._sdk import Context
 from pydantic import Field
 
@@ -18,8 +19,9 @@ def _with_mailbox(messages: list[dict], mailbox: str) -> list[dict]:
 def _not_found(uid: str, mailbox: str) -> ValueError:
     # UID gäller per mapp — ett UID från en annan mapp är det vanligaste skälet
     return ValueError(
-        f"Inget meddelande med UID {uid} i {mailbox}. "
-        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+        _("Inget meddelande med UID {uid} i {mailbox}. "
+        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från.",
+        uid=uid, mailbox=mailbox)
     )
 
 

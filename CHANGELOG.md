@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`PROTONMAIL_LANGUAGE=en` shows the server in English.** Tool titles and descriptions, parameter descriptions, prompt and resource titles and descriptions, the prompt texts, the server instructions and every error and explanation text the client receives are in English when the setting is `en`; `sv` (the default) is unchanged. Tool and parameter names are the same in both languages. Errors raised before the settings have been read (an invalid setting, HTTP start-up) and the server log stay Swedish. Implemented by Claude (Anthropic) for [#7](https://github.com/mattias242/protonmail-mcp-server/issues/7).
 - **HTTP mode for clients that only take a URL (Perplexity):** `protonmail-mcp --http` serves Streamable HTTP on `http://127.0.0.1:8765/mcp`. Every request needs the API key in `PROTONMAIL_HTTP_TOKEN` (at least 32 characters, as `Authorization: Bearer` or `X-API-Key`); without it the server does not start. New settings `PROTONMAIL_HTTP_TOKEN`, `PROTONMAIL_HTTP_HOST`, `PROTONMAIL_HTTP_PORT` and `PROTONMAIL_HTTP_ALLOWED_HOSTS`. The README describes running it behind Cloudflare Tunnel and Cloudflare Access. Without `--http` nothing changes: stdio is still the default, and unknown command-line arguments are still ignored.
 
 ## [0.4.0] - 2026-10-15

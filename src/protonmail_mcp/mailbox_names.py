@@ -8,6 +8,8 @@ UTF-16BE i base64 mellan "&" och "-", med "," i stället för "/" och utan
 import base64
 import re
 
+from .i18n import _
+
 _B64_RE = re.compile(r"[A-Za-z0-9+,]+")
 
 
@@ -19,7 +21,7 @@ def _b64_run(text: str) -> str:
     try:
         raw = text.encode("utf-16-be")
     except UnicodeEncodeError as e:
-        raise ValueError(f"Ogiltigt tecken (ensam surrogat) i mappnamn: {text!r}") from e
+        raise ValueError(_("Ogiltigt tecken (ensam surrogat) i mappnamn: {text!r}", text=text)) from e
     return "&" + base64.b64encode(raw).decode("ascii").rstrip("=").replace("/", ",") + "-"
 
 
@@ -51,31 +53,31 @@ def decode_modified_utf7(wire: str) -> str:
     while i < len(wire):
         ch = wire[i]
         if not _is_printable_ascii(ch):
-            raise ValueError(f"Inte modified UTF-7 (tecken utanför ASCII): {wire!r}")
+            raise ValueError(_("Inte modified UTF-7 (tecken utanför ASCII): {wire!r}", wire=wire))
         if ch != "&":
             out.append(ch)
             i += 1
             continue
         end = wire.find("-", i + 1)
         if end == -1:
-            raise ValueError(f"Inte modified UTF-7 (saknar avslutande '-'): {wire!r}")
+            raise ValueError(_("Inte modified UTF-7 (saknar avslutande '-'): {wire!r}", wire=wire))
         chunk = wire[i + 1:end]
         if not chunk:
             out.append("&")
         else:
             if not _B64_RE.fullmatch(chunk):
-                raise ValueError(f"Inte modified UTF-7 (ogiltig base64): {wire!r}")
+                raise ValueError(_("Inte modified UTF-7 (ogiltig base64): {wire!r}", wire=wire))
             padded = chunk.replace(",", "/") + "=" * (-len(chunk) % 4)
             try:
                 out.append(base64.b64decode(padded, validate=True).decode("utf-16-be"))
             except ValueError as e:  # binascii.Error och UnicodeDecodeError
-                raise ValueError(f"Inte modified UTF-7 ({e}): {wire!r}") from e
+                raise ValueError(_("Inte modified UTF-7 ({e}): {wire!r}", e=e, wire=wire)) from e
         i = end + 1
     name = "".join(out)
     # Fångar allt som avkodas men inte är kanoniskt: base64-kodad utskrivbar
     # ASCII, intilliggande sekvenser och utfyllnadsbitar som inte är noll
     if encode_modified_utf7(name) != wire:
-        raise ValueError(f"Inte kanonisk modified UTF-7: {wire!r}")
+        raise ValueError(_("Inte kanonisk modified UTF-7: {wire!r}", wire=wire))
     return name
 
 

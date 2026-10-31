@@ -1,3 +1,4 @@
+from ..i18n import _
 from .._sdk import Context
 
 from ..imap_client import _LEVEL_SEP_RE
@@ -20,7 +21,7 @@ def _last_level(name: str) -> str:
 
 async def _name_taken_error(app, name: str, bridge_error: str) -> ValueError:
     """Begripligt fel när Proton nekar CREATE för att namnet redan används."""
-    kind = "mappen" if name.startswith("Folders/") else "etiketten"
+    kind = _("mappen") if name.startswith("Folders/") else _("etiketten")
     try:
         existing = [m["name"] for m in await app.imap.list_mailboxes()]
     except ValueError:
@@ -30,13 +31,14 @@ async def _name_taken_error(app, name: str, bridge_error: str) -> ValueError:
         other for other in existing
         if other != name and other.startswith(_USER_PREFIXES) and _last_level(other) == key
     )
-    used_by = f" Namnet används redan av {', '.join(twins)}." if twins else ""
+    used_by = _(" Namnet används redan av {twins}.", twins=", ".join(twins)) if twins else ""
     return ValueError(
-        f"Kunde inte skapa {kind} {name}: namnet är upptaget.{used_by} Proton kräver att "
+        _("Kunde inte skapa {kind} {name}: namnet är upptaget.{used_by} Proton kräver att "
         "namnen är unika över mappar och etiketter tillsammans, så en mapp och en etikett "
         "kan inte heta likadant. Välj ett annat namn, eller använd den befintliga "
         "(list_mailboxes visar vilka som finns). "
-        f"(Bridge: {bridge_error})"
+        "(Bridge: {bridge_error})",
+        kind=kind, name=name, used_by=used_by, bridge_error=bridge_error)
     )
 
 

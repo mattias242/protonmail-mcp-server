@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import quote, unquote
 
+from .i18n import _
 from ._sdk import DEFAULT_RESOURCE_SECURITY, Resource, ResourceError, ResourceTemplate, UriTemplate
 from pydantic import Field
 
@@ -71,13 +72,15 @@ def _decode_mailbox(encoded: str, uri: str) -> str:
         name = unquote(encoded, errors="strict")
     except UnicodeDecodeError:
         raise ValueError(
-            f"Mappnamnet i {uri} är inte giltig procentkodad UTF-8. Bygg URI:n med "
-            "procentkodning av hela namnet, t.ex. mailbox://Folders%2FA%2FB."
+            _("Mappnamnet i {uri} är inte giltig procentkodad UTF-8. Bygg URI:n med "
+            "procentkodning av hela namnet, t.ex. mailbox://Folders%2FA%2FB.",
+            uri=uri)
         ) from None
     if not 1 <= len(name) <= _MAX_MAILBOX_CHARS:
         raise ValueError(
-            f"Mappnamnet i {uri} måste vara 1–{_MAX_MAILBOX_CHARS} tecken (avkodat), "
-            f"fick {len(name)}."
+            _("Mappnamnet i {uri} måste vara 1–{_MAX_MAILBOX_CHARS} tecken (avkodat), "
+            "fick {n_name}.",
+            uri=uri, _MAX_MAILBOX_CHARS=_MAX_MAILBOX_CHARS, n_name=len(name))
         )
     return _validate_mailbox(name)
 
@@ -85,7 +88,8 @@ def _decode_mailbox(encoded: str, uri: str) -> str:
 def parse_mailbox_uri(uri: str) -> str:
     """Mappnamnet i en mailbox://-URI. ValueError om URI:n är ogiltig."""
     if not uri.startswith(_MAILBOX_PREFIX):
-        raise ValueError(f"Inte en mappresurs: {uri} (ska börja med {_MAILBOX_PREFIX})")
+        raise ValueError(_("Inte en mappresurs: {uri} (ska börja med {_MAILBOX_PREFIX})",
+                           uri=uri, _MAILBOX_PREFIX=_MAILBOX_PREFIX))
     return _decode_mailbox(uri[len(_MAILBOX_PREFIX):], uri)
 
 
@@ -94,12 +98,14 @@ def parse_email_uri(uri: str) -> tuple[str, str]:
     from .imap_client import _validate_uid
 
     if not uri.startswith(_EMAIL_PREFIX):
-        raise ValueError(f"Inte en mejlresurs: {uri} (ska börja med {_EMAIL_PREFIX})")
+        raise ValueError(_("Inte en mejlresurs: {uri} (ska börja med {_EMAIL_PREFIX})",
+                           uri=uri, _EMAIL_PREFIX=_EMAIL_PREFIX))
     encoded, slash, uid = uri[len(_EMAIL_PREFIX):].rpartition("/")
     if not slash or not encoded:
         raise ValueError(
-            f"Mejlresursen {uri} saknar mapp eller UID — formen är email://{{mailbox}}/{{uid}}, "
-            "t.ex. email://INBOX/42."
+            _("Mejlresursen {uri} saknar mapp eller UID — formen är email://{{mailbox}}/{{uid}}, "
+            "t.ex. email://INBOX/42.",
+            uri=uri)
         )
     return _decode_mailbox(encoded, uri), _validate_uid(unquote(uid))
 
@@ -123,7 +129,8 @@ def canonical_uri(uri: str) -> str:
         mailbox, uid = parse_email_uri(uri)
         return email_uri(mailbox_key(mailbox), uid)
     raise ValueError(
-        f"Okänd resurs: {uri}. Servern har {MAILBOXES_URI}, {MAILBOX_TEMPLATE} och {EMAIL_TEMPLATE}."
+        _("Okänd resurs: {uri}. Servern har {MAILBOXES_URI}, {MAILBOX_TEMPLATE} och {EMAIL_TEMPLATE}.",
+          uri=uri, MAILBOXES_URI=MAILBOXES_URI, MAILBOX_TEMPLATE=MAILBOX_TEMPLATE, EMAIL_TEMPLATE=EMAIL_TEMPLATE)
     )
 
 
@@ -184,7 +191,7 @@ class _ImapResource(Resource):
             # ResourceError: klienten får texten oförändrad (annat blir SDK:ns
             # engelska "Error reading resource …" utan förklaring)
             raise ResourceError(
-                describe_error(exc, tool_name=f"resursen {self.uri}", open_world=False)
+                describe_error(exc, tool_name=_("resursen {uri}", uri=self.uri), open_world=False)
             ) from exc
         return json.dumps(data, ensure_ascii=False, indent=2)
 

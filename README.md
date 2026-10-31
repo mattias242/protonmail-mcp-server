@@ -14,7 +14,7 @@ What you get:
 - **Prompts** for common tasks (summarise unread mail, triage, draft a reply, clean up newsletters).
 - **New mail via IMAP IDLE** on dedicated connections, without polling.
 
-Tool descriptions, server instructions, prompts and error messages are written in Swedish; models handle this fine, and the tool names and parameters are English.
+Tool descriptions, server instructions, prompts and error messages are in Swedish by default; set `PROTONMAIL_LANGUAGE=en` to get them in English. Models handle either language fine, and the tool and parameter names are always English.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md). Upgrading from 0.2.0? Version 0.3.0 has breaking changes (Python 3.12+, `mailbox` required for UID-based tools, new `search_emails` and `list_mailboxes` response formats and more) — read its upgrade notes first.
 
@@ -278,7 +278,7 @@ Clients on protocol version 2026-07-28 use `subscriptions/listen`, which the ser
 | `svara_pa_mejl` | `uid`, `mailbox`, `ton` (tone) | Read an email and its thread and write a reply **draft** (not sent) |
 | `rensa_nyhetsbrev` | `mailbox` | Find newsletters and suggest unsubscribing or archiving — confirmation required |
 
-Every prompt repeats the safety rules: UIDs are per mailbox, email content is untrusted, prefer drafts, at most 100 UIDs per bulk call.
+Every prompt repeats the safety rules: UIDs are per mailbox, email content is untrusted, prefer drafts, at most 100 UIDs per bulk call. The prompt texts follow `PROTONMAIL_LANGUAGE`, like the tool descriptions.
 
 ## Configuration
 
@@ -299,6 +299,7 @@ All settings use the `PROTONMAIL_` prefix and can be set in `.env` or as environ
 | `PROTONMAIL_ATTACHMENT_MAX_INLINE_BYTES` | `1048576` | Largest attachment (bytes, 1 MiB) that `get_attachment(save=false)` returns inline |
 | `PROTONMAIL_READ_ONLY` | `false` | `true` refuses everything that changes the account: moving, deleting, flags, labels, folders, drafts and sending |
 | `PROTONMAIL_SEND_MODE` | `send` | `send`; `draft_only` refuses `send_email`, `reply_to_email`, `forward_email` and `send_draft` but allows drafts; `disabled` refuses drafts too |
+| `PROTONMAIL_LANGUAGE` | `sv` | Language of everything the client shows: tool titles and descriptions, prompts, resources, server instructions and error messages. `sv` (Swedish) or `en` (English). Tool and parameter names never change; errors raised before the settings are read (an invalid setting, HTTP start-up) are Swedish |
 | `PROTONMAIL_ALLOWED_RECIPIENTS` | — | Comma-separated addresses (`anna@example.com`) and/or domains (`@example.com`). When set, every To/Cc/Bcc recipient of every send must match, or nothing is sent. Domains are case-insensitive and compared as punycode; a domain does not cover its subdomains. Empty = everyone |
 | `PROTONMAIL_MAX_RECIPIENTS` | `50` | Maximum unique recipients per send (To, Cc and Bcc together); `0` = no limit. More than 1000 address entries are always refused |
 | `PROTONMAIL_MAX_SENDS_PER_HOUR` | `30` | Maximum sends in a sliding hour, counted in memory (reset on restart); `0` = no limit. The error says when the next send is possible |

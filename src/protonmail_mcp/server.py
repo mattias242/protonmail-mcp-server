@@ -4,10 +4,11 @@ import sys
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Any
 
 from ._sdk import INVALID_PARAMS, Context, MCPError, MCPServer, ToolError
 
-from . import __version__
+from . import __version__, i18n
 
 # Logging enbart till stderr — stdout är reserverat för MCP stdio-protokollet
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -52,6 +53,7 @@ async def lifespan(server: MCPServer):
         )
         raise
 
+    apply_language(s.language)
     from .attachments import prepare_attachment_dir
 
     prepare_attachment_dir(s)  # kastar aldrig, varnar bara
@@ -100,12 +102,93 @@ E-post i Proton Mail via ProtonMail Bridge.
 current_context: ContextVar[Context | None] = ContextVar("current_context", default=None)
 
 
+def _localized_descriptions(schema: Any) -> Any:
+    """Ett JSON-schema med parameterbeskrivningarna översatta (texts_en.PARAMS)."""
+    if isinstance(schema, dict):
+        out = {}
+        for key, value in schema.items():
+            if key == "description" and isinstance(value, str):
+                out[key] = i18n.translate_lookup("PARAMS", value) or value
+            else:
+                out[key] = _localized_descriptions(value)
+        return out
+    if isinstance(schema, list):
+        return [_localized_descriptions(item) for item in schema]
+    return schema
+
+
+def _localized_tool(tool: Any) -> Any:
+    update: dict[str, Any] = {"input_schema": _localized_descriptions(tool.input_schema)}
+    entry = i18n.translate_lookup("TOOLS", tool.name)
+    if entry is not None:
+        title, description = entry
+        update["title"] = title
+        update["description"] = description
+        if tool.annotations is not None:
+            update["annotations"] = tool.annotations.model_copy(update={"title": title})
+    return tool.model_copy(update=update)
+
+
+def _localized_prompt(prompt: Any) -> Any:
+    update: dict[str, Any] = {}
+    entry = i18n.translate_lookup("PROMPTS", prompt.name)
+    if entry is not None:
+        update["title"], update["description"] = entry
+    if prompt.arguments:
+        update["arguments"] = [
+            arg.model_copy(
+                update={"description": i18n.translate_lookup("PARAMS", arg.description) or arg.description}
+            )
+            if arg.description
+            else arg
+            for arg in prompt.arguments
+        ]
+    return prompt.model_copy(update=update)
+
+
+def _localized_resource(resource: Any) -> Any:
+    entry = i18n.translate_lookup("RESOURCES", resource.name)
+    if entry is None:
+        return resource
+    title, description = entry
+    return resource.model_copy(update={"title": title, "description": description})
+
+
 class _GuardedMCPServer(MCPServer):
     """MCP-server som vägrar verktyg som policyn inte tillåter, innan de körs.
 
     Den egentliga spärren sitter i IMAP- och SMTP-klienterna (policy.py);
     här vägras t.ex. reply_to_email redan innan originalet läses.
+
+    Med PROTONMAIL_LANGUAGE=en byts titlar, beskrivningar och
+    parameterbeskrivningar för verktyg, promptar och resurser ut mot
+    engelska (texts_en.py) när listorna skickas till klienten; det som är
+    registrerat förblir svenskt, så kontraktsfacit och namnspärrarna gäller.
     """
+
+    async def list_tools(self):
+        tools = await super().list_tools()
+        if i18n.language() == i18n.DEFAULT:
+            return tools
+        return [_localized_tool(tool) for tool in tools]
+
+    async def list_prompts(self):
+        prompts = await super().list_prompts()
+        if i18n.language() == i18n.DEFAULT:
+            return prompts
+        return [_localized_prompt(prompt) for prompt in prompts]
+
+    async def list_resources(self):
+        resources = await super().list_resources()
+        if i18n.language() == i18n.DEFAULT:
+            return resources
+        return [_localized_resource(resource) for resource in resources]
+
+    async def list_resource_templates(self):
+        templates = await super().list_resource_templates()
+        if i18n.language() == i18n.DEFAULT:
+            return templates
+        return [_localized_resource(template) for template in templates]
 
     async def call_tool(self, name, arguments, context=None):
         from . import audit, config, policy
@@ -151,6 +234,18 @@ class _GuardedMCPServer(MCPServer):
 mcp = _GuardedMCPServer(
     "protonmail", instructions=INSTRUCTIONS, lifespan=lifespan, version=__version__, subscriptions=False
 )
+
+
+def apply_language(language: str) -> None:
+    """Sätt språket för allt klienten ser (PROTONMAIL_LANGUAGE): texterna via
+    i18n och serverinstruktionerna, som SDK:n skickar vid initialize ur
+    lågnivåserverns attribut (privat; se "Kända begränsningar" i CLAUDE.md).
+
+    Anropas av lifespan när inställningarna lästs. Verktyg, promptar och
+    resurser översätts först när listorna skickas (_GuardedMCPServer).
+    """
+    i18n.set_language(language)
+    mcp._lowlevel_server.instructions = i18n.translate_lookup("INSTRUCTIONS", "") or INSTRUCTIONS
 
 
 def register_tools() -> None:

@@ -19,6 +19,7 @@ from urllib.parse import quote, quote_plus
 
 import aioimaplib
 import aiosmtplib
+from ..i18n import _
 from .._sdk import ToolError
 
 from .. import config
@@ -110,10 +111,11 @@ def _partial_delivery(exc: SMTPPartialDeliveryError) -> str:
         f"{addr} ({code} {_one_line(str(text))})" for addr, (code, text) in exc.refused.items()
     )
     return (
-        f"Mejlet skickades bara delvis. Fick mejlet: {', '.join(exc.delivered)}. "
-        f"Fick det INTE (servern vägrade): {refused}. Skicka inte om till alla — de "
+        _("Mejlet skickades bara delvis. Fick mejlet: {delivered}. "
+        "Fick det INTE (servern vägrade): {refused}. Skicka inte om till alla — de "
         "som redan fått mejlet får det då två gånger. Skicka vid behov ett nytt mejl "
-        "bara till dem som inte fick det, efter att adresserna rättats."
+        "bara till dem som inte fick det, efter att adresserna rättats.",
+        delivered=", ".join(exc.delivered), refused=refused)
     )
 
 
@@ -121,9 +123,10 @@ def _unexpected(exc: BaseException, tool_name: str) -> str:
     stack = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     logger.error("Oväntat fel i verktyget %s:\n%s", tool_name, _scrub(stack))
     return (
-        f"Oväntat fel i {tool_name} ({type(exc).__name__}). Detaljerna är loggade i "
+        _("Oväntat fel i {tool_name} ({kind}). Detaljerna är loggade i "
         "serverns logg (stderr). Upprepa inte samma anrop; be användaren titta i "
-        "loggen eller försök med andra argument."
+        "loggen eller försök med andra argument.",
+        tool_name=tool_name, kind=type(exc).__name__)
     )
 
 
@@ -138,31 +141,34 @@ def describe_error(exc: BaseException, *, tool_name: str, open_world: bool) -> s
     if isinstance(exc, SMTPPartialDeliveryError):
         return _scrub(_partial_delivery(exc))
     if isinstance(exc, IMAPAuthenticationError):
-        return _AUTH.format(detail="")
+        return _(_AUTH, detail="")
     if isinstance(exc, aiosmtplib.SMTPAuthenticationError):
-        return _scrub(_AUTH.format(detail=f" (SMTP svarade {_smtp_reply(exc)})"))
+        return _scrub(_(_AUTH, detail=_(" (SMTP svarade {reply})", reply=_smtp_reply(exc))))
     if isinstance(exc, aiosmtplib.SMTPRecipientsRefused):
         refused = "; ".join(
             f"{e.recipient} ({_smtp_reply(e)})" for e in exc.recipients
         )
         return _scrub(
-            f"Servern vägrade alla mottagare: {refused}. Inget mejl skickades. "
-            "Rätta adresserna och försök igen."
+            _("Servern vägrade alla mottagare: {refused}. Inget mejl skickades. "
+            "Rätta adresserna och försök igen.",
+            refused=refused)
         )
     if isinstance(exc, aiosmtplib.SMTPResponseException):
         return _scrub(
-            f"ProtonMail Bridge vägrade skicka mejlet ({_smtp_reply(exc)}). "
-            "Inget mejl skickades."
+            _("ProtonMail Bridge vägrade skicka mejlet ({reply}). "
+            "Inget mejl skickades.",
+            reply=_smtp_reply(exc))
         )
     if isinstance(exc, _CONNECTION_ERRORS):
         detail = _detail(exc)
-        if detail.startswith(_UNREACHABLE_PREFIX):
+        if detail.startswith(_(_UNREACHABLE_PREFIX)):
             # imap_client har redan formulerat det (med värd och port)
-            text = f"{detail}. {_UNREACHABLE_ADVICE}"
+            text = f"{detail}. {_(_UNREACHABLE_ADVICE)}"
         else:
-            text = f"{_UNREACHABLE_PREFIX} ({detail}) — körs Bridge? {_UNREACHABLE_ADVICE}"
+            text = _("{prefix} ({detail}) — körs Bridge? {advice}",
+                     prefix=_(_UNREACHABLE_PREFIX), detail=detail, advice=_(_UNREACHABLE_ADVICE))
         if open_world:
-            text += _MAYBE_SENT
+            text += _(_MAYBE_SENT)
         return _scrub(text)
     if isinstance(exc, ValueError) and not isinstance(exc, UnicodeError):
         # Verktygens egna fel: redan formulerade på svenska för modellen

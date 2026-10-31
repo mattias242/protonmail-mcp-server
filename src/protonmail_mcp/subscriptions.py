@@ -43,6 +43,7 @@ from collections.abc import Callable
 from typing import Any
 
 import anyio
+from .i18n import _
 from ._sdk import EmptyResult, SubscribeRequestParams, UnsubscribeRequestParams
 from .resources import MAILBOXES_URI, canonical_uri, email_uri, mailbox_uri
 
@@ -394,12 +395,14 @@ def coverage_note(uri: str) -> str | None:
         if name in _watched_mailboxes():
             return None
         return (
-            f"{uri} ligger utanför PROTONMAIL_WATCH_MAILBOXES: notis bara när serverns egna "
-            "verktyg ändrar mappen, inte för nya mejl eller ändringar från andra klienter"
+            _("{uri} ligger utanför PROTONMAIL_WATCH_MAILBOXES: notis bara när serverns egna "
+            "verktyg ändrar mappen, inte för nya mejl eller ändringar från andra klienter",
+            uri=uri)
         )
     return (
-        f"{uri}: notis bara när serverns egna verktyg ändrar resursen, inte för ändringar "
-        "från andra klienter"
+        _("{uri}: notis bara när serverns egna verktyg ändrar resursen, inte för ändringar "
+        "från andra klienter",
+        uri=uri)
     )
 
 

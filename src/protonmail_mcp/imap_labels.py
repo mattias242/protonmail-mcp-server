@@ -14,6 +14,7 @@ import re
 from email.parser import HeaderParser
 from typing import Any
 
+from .i18n import _
 from . import policy
 from .imap_bulk import (
     _FLAGS_RE,
@@ -84,23 +85,25 @@ def label_mailbox(label: str) -> str:
     bare = key[len(LABEL_PREFIX):] if key.startswith(LABEL_PREFIX.casefold()) else key
     if bare == "starred":
         raise ValueError(
-            "Starred är Protons stjärnmärkning, inte en etikett. "
-            "Använd flag_email för att stjärnmärka och unflag_email för att ta bort stjärnan."
+            _("Starred är Protons stjärnmärkning, inte en etikett. "
+            "Använd flag_email för att stjärnmärka och unflag_email för att ta bort stjärnan.")
         )
     if key.startswith("folders/"):
         raise ValueError(
-            f"{label!r} är en mapp, inte en etikett. Ett mejl ligger i exakt en mapp — "
-            "använd move_email för att flytta det dit."
+            _("{label!r} är en mapp, inte en etikett. Ett mejl ligger i exakt en mapp — "
+            "använd move_email för att flytta det dit.",
+            label=label)
         )
     if bare in _NOT_LABELS and not key.startswith(LABEL_PREFIX.casefold()):
         raise ValueError(
-            f"{label!r} är en systemmapp, inte en etikett. Använd move_email för att flytta "
-            "mejl dit, eller ange en etikett (t.ex. \"Kvitton\" eller \"Labels/Kvitton\")."
+            _("{label!r} är en systemmapp, inte en etikett. Använd move_email för att flytta "
+            "mejl dit, eller ange en etikett (t.ex. \"Kvitton\" eller \"Labels/Kvitton\").",
+            label=label)
         )
     if not key.startswith(LABEL_PREFIX.casefold()):
         name = LABEL_PREFIX + name
     if name == LABEL_PREFIX:
-        raise ValueError("Etikettnamnet är tomt. Ange t.ex. \"Kvitton\" eller \"Labels/Kvitton\".")
+        raise ValueError(_("Etikettnamnet är tomt. Ange t.ex. \"Kvitton\" eller \"Labels/Kvitton\"."))
     _check_user_folder(name)
     _quote_mailbox(name)
     return name
@@ -124,12 +127,14 @@ async def _require_label(imap: IMAPClient, label: str) -> str:
         return variants[0]
     if variants:
         raise ValueError(
-            f"Etiketten {label} finns inte med exakt det namnet, men det finns flera med annan "
-            f"versal/gemen: {', '.join(variants)}. Ange vilken som avses med exakt namn."
+            _("Etiketten {label} finns inte med exakt det namnet, men det finns flera med annan "
+            "versal/gemen: {variants}. Ange vilken som avses med exakt namn.",
+            label=label, variants=', '.join(variants))
         )
     raise ValueError(
-        f"Etiketten {label} finns inte. Skapa den först med create_folder(\"{label}\"); "
-        "list_mailboxes visar vilka etiketter som finns."
+        _("Etiketten {label} finns inte. Skapa den först med create_folder(\"{label}\"); "
+        "list_mailboxes visar vilka etiketter som finns.",
+        label=label)
     )
 
 
@@ -217,7 +222,7 @@ def searchable(info: dict) -> bool:
 
 async def _fetch_identities_by_uid(imap: IMAPClient, mailbox: str, uids: list[str]) -> dict[str, dict]:
     resp = await imap._client.uid("fetch", uid_set(uids), _IDENTITY_ITEMS)
-    _require_ok(resp, f"Hämtningen av Message-ID i {mailbox}")
+    _require_ok(resp, _("Hämtningen av Message-ID i {mailbox}", mailbox=mailbox))
     return _parse_identities(resp.lines)
 
 
@@ -277,7 +282,7 @@ async def _find_in_label(
     for start in range(0, len(ordered), _FETCH_CHUNK_SIZE):
         chunk = ordered[start:start + _FETCH_CHUNK_SIZE]
         resp = await imap._client.fetch(",".join(chunk), _IDENTITY_ITEMS)
-        _require_ok(resp, f"Hämtningen av sökträffarna i {label}")
+        _require_ok(resp, _("Hämtningen av sökträffarna i {label}", label=label))
         candidates.update(_parse_identities(resp.lines))
 
     found: dict[str, str] = {}
@@ -285,12 +290,14 @@ async def _find_in_label(
     for src_uid, info in sources.items():
         same, certain = _same_mail(info, candidates) if searchable(info) else ([], True)
         if not same:
-            errors[src_uid] = f"Mejlet med UID {src_uid} {NOT_IN_VIEW} {label}."
+            errors[src_uid] = _("Mejlet med UID {src_uid} {not_in_view} {label}.",
+                                src_uid=src_uid, not_in_view=_(NOT_IN_VIEW), label=label)
         elif not certain:
             errors[src_uid] = (
-                f"Det finns {AMBIGUOUS} i {label} som inte går att skilja från UID {src_uid} "
-                f"(samma Message-ID, tid och storlek), så det går inte att avgöra vilket det är. "
-                f"Lista {label} och ange UID:t där med mailbox=\"{label}\"."
+                _("Det finns {ambiguous} i {label} som inte går att skilja från UID {src_uid} "
+                "(samma Message-ID, tid och storlek), så det går inte att avgöra vilket det är. "
+                "Lista {label} och ange UID:t där med mailbox=\"{label}\".",
+                ambiguous=_(AMBIGUOUS), label=label, src_uid=src_uid)
             )
         else:
             found[src_uid] = same[0]
@@ -311,12 +318,12 @@ async def has_internal_id(imap: IMAPClient, mailbox: str, internal_id: str) -> b
     ValueError om id:t är ogiltigt eller Bridge nekar.
     """
     if _usable_internal_id([internal_id]) is None:
-        raise ValueError(f"Ogiltigt X-Pm-Internal-Id: {internal_id!r}")
+        raise ValueError(_("Ogiltigt X-Pm-Internal-Id: {internal_id!r}", internal_id=internal_id))
     _quote_mailbox(mailbox)
     await imap._ensure_connected()
     await imap._select(mailbox)
     source = {"id": {"internal_id": internal_id, "message_id": None, "date": None, "size": None}}
-    found, _ = await _find_in_label(imap, mailbox, source)
+    found, _errors = await _find_in_label(imap, mailbox, source)
     return "id" in found
 
 
@@ -334,12 +341,14 @@ async def _expunge_in_label(
     uids = uid_set(ordered)
     resp = await imap._uid("store", uids, "+FLAGS", r"(\Deleted)")
     if resp.result != "OK":
-        error = f"Borttagningen av etiketten {label} misslyckades ({resp.result}): {_response_text(resp)}"
+        error = _("Borttagningen av etiketten {label} misslyckades ({result}): {text}",
+                  label=label, result=resp.result, text=_response_text(resp))
         return [], {uid: error for uid in ordered}
     resp = await imap._uid("expunge", uids)
     if resp.result == "OK":
         return ordered, {}
-    error = f"Borttagningen av etiketten {label} misslyckades ({resp.result}): {_response_text(resp)}"
+    error = _("Borttagningen av etiketten {label} misslyckades ({result}): {text}",
+              label=label, result=resp.result, text=_response_text(resp))
     done, failed = await _split_after_failure(imap, label, ordered, error)
     left = [f["uid"] for f in failed]
     if left:
@@ -357,8 +366,9 @@ async def add_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str)
     _quote_mailbox(mailbox)
     if _mailbox_key(mailbox) == _mailbox_key(target):
         raise ValueError(
-            f"Mejlen i {target} har redan etiketten {target}. Ange mappen där mejlet ligger "
-            "(t.ex. INBOX) som mailbox."
+            _("Mejlen i {target} har redan etiketten {target}. Ange mappen där mejlet ligger "
+            "(t.ex. INBOX) som mailbox.",
+            target=target)
         )
     await imap._ensure_connected()
     target = await _require_label(imap, target)
@@ -371,7 +381,8 @@ async def add_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str)
             ok = found
         else:
             failed += fail_all(
-                found, f"Att lägga till etiketten {target} misslyckades ({resp.result}): {_response_text(resp)}"
+                found, _("Att lägga till etiketten {target} misslyckades ({result}): {text}",
+                         target=target, result=resp.result, text=_response_text(resp))
             )
     return result(uids, ok, failed)
 
@@ -407,9 +418,10 @@ async def remove_label(imap: IMAPClient, mailbox: str, uids: list[str], label: s
                 failed.append({"uid": uid, "error": missing_error(uid, mailbox)})
             elif not searchable(info):
                 failed.append({"uid": uid, "error": (
-                    f"Mejlet med UID {uid} i {mailbox} saknar Message-ID och X-Pm-Internal-Id "
-                    f"(eller har värden som inte går att söka på) och kan inte hittas i "
-                    f"{target}. Lista {target} och ange UID:t där med mailbox=\"{target}\"."
+                    _("Mejlet med UID {uid} i {mailbox} saknar Message-ID och X-Pm-Internal-Id "
+                    "(eller har värden som inte går att söka på) och kan inte hittas i "
+                    "{target}. Lista {target} och ange UID:t där med mailbox=\"{target}\".",
+                    uid=uid, mailbox=mailbox, target=target)
                 )})
             else:
                 sources[uid] = info
@@ -432,7 +444,7 @@ async def remove_label(imap: IMAPClient, mailbox: str, uids: list[str], label: s
 async def _without_flag(imap: IMAPClient, uids: list[str]) -> list[str]:
     """De av uids i Starred (som är vald) som inte har \\Flagged."""
     resp = await imap._uid("fetch", uid_set(sorted(set(uids), key=int)), "(UID FLAGS)")
-    _require_ok(resp, f"Hämtningen av flaggorna i {STARRED}")
+    _require_ok(resp, _("Hämtningen av flaggorna i {STARRED}", STARRED=STARRED))
     unflagged: set[str] = set()
     for line in resp.lines:
         text = _decode(line)
@@ -444,8 +456,9 @@ async def _without_flag(imap: IMAPClient, uids: list[str]) -> list[str]:
 
 def _starred_note(detail: str) -> str:
     return (
-        f"Stjärnan är borttagen, men mejlet kunde inte tas bort ur Starred-vyn ({detail}). "
-        "Det kan synas där, utan stjärna, tills Bridge hämtat ändringen från Proton (inom ~40 s)."
+        _("Stjärnan är borttagen, men mejlet kunde inte tas bort ur Starred-vyn ({detail}). "
+        "Det kan synas där, utan stjärna, tills Bridge hämtat ändringen från Proton (inom ~40 s).",
+        detail=detail)
     )
 
 
@@ -500,7 +513,7 @@ async def set_starred(imap: IMAPClient, mailbox: str, uids: list[str], starred: 
     Vid avmarkering tas mejlen också bort ur Starred-vyn, som annars visar dem
     tills Bridge hämtat nästa händelse från Proton (se _leave_starred_view).
     """
-    what = "Stjärnmärkningen" if starred else "Borttagningen av stjärnmärkningen"
+    what = _("Stjärnmärkningen") if starred else _("Borttagningen av stjärnmärkningen")
     res = await store_flags(imap, mailbox, uids, r"(\Flagged)", starred, what)
     if not starred and res["ok"]:
         note = await _leave_starred_view(imap, mailbox, res["ok"])

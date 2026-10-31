@@ -12,6 +12,7 @@ import re
 
 import aioimaplib
 
+from .i18n import _
 from . import policy
 
 from .imap_client import (
@@ -43,7 +44,8 @@ async def _append(imap: IMAPClient, message: bytes):
         )
     except asyncio.TimeoutError:
         raise asyncio.TimeoutError(
-            f"ProtonMail Bridge svarade inte på APPEND till {DRAFTS} inom {imap.uid_timeout:g} s"
+            _("ProtonMail Bridge svarade inte på APPEND till {DRAFTS} inom {uid_timeout:g} s",
+  DRAFTS=DRAFTS, uid_timeout=imap.uid_timeout)
         ) from None
 
 
@@ -79,7 +81,7 @@ async def _find_by_message_id(imap: IMAPClient, message_id: str) -> str | None:
 
 async def _store_draft(imap: IMAPClient, message: bytes, message_id: str | None) -> str | None:
     resp = await _append(imap, message)
-    _require_ok(resp, f"Sparandet av utkastet i {DRAFTS}")
+    _require_ok(resp, _("Sparandet av utkastet i {DRAFTS}", DRAFTS=DRAFTS))
     uid = _appenduid(resp)
     if uid is None and message_id:
         uid = await _find_by_message_id(imap, message_id)
@@ -110,8 +112,9 @@ async def _move_to_trash(imap: IMAPClient, uid: str) -> None:
 
 def _new_draft_saved(new_uid: str | None, message_id: str | None) -> str:
     return (
-        f"Det nya utkastet sparades i {DRAFTS} (UID {new_uid or 'okänt'}, "
-        f"Message-ID {message_id or 'okänt'})"
+        _("Det nya utkastet sparades i {DRAFTS} (UID {new_uid}, "
+        "Message-ID {message_id})",
+        DRAFTS=DRAFTS, new_uid=new_uid or _("okänt"), message_id=message_id or _("okänt"))
     )
 
 
@@ -142,8 +145,10 @@ async def replace_draft(
         await _move_to_trash(imap, safe_uid)
     except ValueError as exc:
         raise ValueError(
-            f"{_new_draft_saved(new_uid, message_id)}, men det gamla (UID {safe_uid}) kunde "
-            f"inte flyttas till {TRASH}, så båda finns kvar i {DRAFTS}: {exc}. {_RETRY_WARNING}"
+            _("{saved}, men det gamla (UID {safe_uid}) kunde "
+            "inte flyttas till {TRASH}, så båda finns kvar i {DRAFTS}: {exc}. {retry_warning}",
+            saved=_new_draft_saved(new_uid, message_id), safe_uid=safe_uid, TRASH=TRASH, DRAFTS=DRAFTS,
+            exc=exc, retry_warning=_(_RETRY_WARNING))
         ) from exc
     except (asyncio.TimeoutError, OSError, aioimaplib.AioImapException) as exc:
         # Det nya utkastet finns redan: ett fel som ser ut som "inget hände"
@@ -153,10 +158,12 @@ async def replace_draft(
         imap._discard_connection()
         detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
         raise ValueError(
-            f"{_new_draft_saved(new_uid, message_id)}, men flytten av det gamla (UID "
-            f"{safe_uid}) till {TRASH} avbröts ({detail}). Det gamla kan "
-            f"ligga kvar i {DRAFTS} eller redan i {TRASH} — kontrollera med "
-            f'list_emails(mailbox="{DRAFTS}"). {_RETRY_WARNING}'
+            _("{saved}, men flytten av det gamla (UID "
+            "{safe_uid}) till {TRASH} avbröts ({detail}). Det gamla kan "
+            "ligga kvar i {DRAFTS} eller redan i {TRASH} — kontrollera med "
+            'list_emails(mailbox="{DRAFTS}"). {retry_warning}',
+            saved=_new_draft_saved(new_uid, message_id), safe_uid=safe_uid, TRASH=TRASH, detail=detail,
+            DRAFTS=DRAFTS, retry_warning=_(_RETRY_WARNING))
         ) from exc
     return new_uid
 
@@ -164,7 +171,7 @@ async def replace_draft(
 async def _has_uid(imap: IMAPClient, uid: str) -> bool:
     """Finns UID:t i den valda mappen? (Bridge svarar OK utan data om inte.)"""
     resp = await imap._uid("fetch", uid, "(UID)")
-    _require_ok(resp, f"Kontrollen av UID {uid} i {DRAFTS}")
+    _require_ok(resp, _("Kontrollen av UID {uid} i {DRAFTS}", uid=uid, DRAFTS=DRAFTS))
     return any(
         (m := _UID_RE.search(_decode(line))) and int(m.group(1)) == int(uid)
         for line in resp.lines
@@ -179,12 +186,12 @@ async def _expunge_draft(imap: IMAPClient, uid: str) -> None:
     remove_sent_draft kontrollerar själv om det finns kvar.
     """
     resp = await imap._uid("store", uid, "+FLAGS", r"(\Deleted)")
-    _require_ok(resp, f"Borttagningsmarkeringen av UID {uid} i {DRAFTS}")
+    _require_ok(resp, _("Borttagningsmarkeringen av UID {uid} i {DRAFTS}", uid=uid, DRAFTS=DRAFTS))
     resp = await imap._uid("expunge", uid)
     if resp.result != "OK":
         # Lämna inte \Deleted kvar: nästa EXPUNGE i mappen skulle annars ta det
         await imap._uid("store", uid, "-FLAGS", r"(\Deleted)")
-    _require_ok(resp, f"Den permanenta raderingen av UID {uid} i {DRAFTS}")
+    _require_ok(resp, _("Den permanenta raderingen av UID {uid} i {DRAFTS}", uid=uid, DRAFTS=DRAFTS))
 
 
 @_serialized

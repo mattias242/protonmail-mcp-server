@@ -10,6 +10,7 @@ from datetime import timezone
 from email.message import Message
 from typing import Any
 
+from .i18n import _
 from .html_text import HtmlText, html_to_text, html_to_text_report
 from .sanitize import (
     UNTRUSTED_CONTENT_NOTICE,
@@ -412,10 +413,11 @@ def get_attachment_part(raw: bytes, index: int) -> dict[str, Any]:
     found = out["attachments"]
     if not 0 <= index < len(found):
         if not found:
-            raise ValueError("Mejlet har inga bilagor")
-        count = f"{len(found)} bilaga" if len(found) == 1 else f"{len(found)} bilagor"
+            raise ValueError(_("Mejlet har inga bilagor"))
+        count = _("1 bilaga") if len(found) == 1 else _("{n} bilagor", n=len(found))
         raise ValueError(
-            f"Ingen bilaga med index {index} — mejlet har {count} (index 0–{len(found) - 1})"
+            _("Ingen bilaga med index {index} — mejlet har {count} (index 0–{last})",
+              index=index, count=count, last=len(found) - 1)
         )
     part, filename, section = found[index]
     data = _attachment_bytes(part)
@@ -638,27 +640,28 @@ def suspicious_reasons(
         html_report = HtmlText("")
     reasons: list[str] = []
     visible = injection_signals("\n".join(texts + [html_report.text, html_report.white_text]))
-    reasons += [f"misstänkt instruktion till modellen: {label}" for label in visible]
+    reasons += [_("misstänkt instruktion till modellen: {label}", label=_(label)) for label in visible]
     hidden = injection_signals(html_report.hidden_text)
     reasons += [
-        f"misstänkt instruktion till modellen i gömd HTML-text: {label}"
+        _("misstänkt instruktion till modellen i gömd HTML-text: {label}", label=_(label))
         for label in hidden if label not in visible
     ]
     if html_report.unsafe:
         reasons.append(
-            "HTML:en kunde inte tolkas säkert: det som inte gick att tolka är utelämnat ur texten"
+            _("HTML:en kunde inte tolkas säkert: det som inte gick att tolka är utelämnat ur texten")
         )
     # Gömd och vit HTML-text i sig flaggas inte: i en mätning på 300 riktiga
     # mejl hade 228 gömda element (förhandstext, mobilversioner) och 30 vit
     # text, utan något injektionsmönster. Den räknas i hidden_html i stället.
     if n := clean.categories.get("tag"):
-        reasons.append(f"osynliga Unicode-taggtecken borttagna: {n} (kan bära dolda instruktioner)")
+        reasons.append(_("osynliga Unicode-taggtecken borttagna: {n} (kan bära dolda instruktioner)", n=n))
     if n := clean.categories.get("bidi"):
-        reasons.append(f"bidi-styrtecken borttagna: {n} (kan vända visningsordningen för läsaren)")
+        reasons.append(_("bidi-styrtecken borttagna: {n} (kan vända visningsordningen för läsaren)", n=n))
     if clean.kept_in_address:
         reasons.append(
-            f"osynliga tecken i en adress: {clean.kept_in_address} (visas som [U+XXXX]; "
-            "svara inte till adressen)"
+            _("osynliga tecken i en adress: {kept_in_address} (visas som [U+XXXX]; "
+            "svara inte till adressen)",
+            kept_in_address=clean.kept_in_address)
         )
     return reasons
 
@@ -730,10 +733,12 @@ def parse_email(
 ) -> dict[str, Any]:
     if body_format not in _BODY_FORMATS:
         raise ValueError(
-            f"Okänt body_format {body_format!r} — giltiga värden: {', '.join(_BODY_FORMATS)}"
+            _("Okänt body_format {body_format!r} — giltiga värden: {formats}",
+              body_format=body_format, formats=", ".join(_BODY_FORMATS))
         )
     if max_length is not None and max_length < 0:
-        raise ValueError(f"max_length måste vara 0 eller större (eller None), fick {max_length}")
+        raise ValueError(_("max_length måste vara 0 eller större (eller None), fick {max_length}",
+                   max_length=max_length))
     msg = email.message_from_bytes(raw)
     parts = _parts(msg)
     clean = FieldCleaner()
@@ -771,13 +776,15 @@ def parse_email(
         # modellen här (men inte i body_plain)
         if html_report.hidden_elements:
             html_reasons.append(
-                f"gömd HTML-text i body_html: {html_report.hidden_elements} element "
-                "(syns inte för läsaren men finns i den råa HTML:en)"
+                _("gömd HTML-text i body_html: {hidden_elements} element "
+                "(syns inte för läsaren men finns i den råa HTML:en)",
+                hidden_elements=html_report.hidden_elements)
             )
         if n := sanitize_text(html.unescape(body_html)).removed.get("tag"):
             html_reasons.append(
-                f"osynliga Unicode-taggtecken som HTML-entiteter i body_html: {n} "
-                "(kan bära dolda instruktioner)"
+                _("osynliga Unicode-taggtecken som HTML-entiteter i body_html: {n} "
+                "(kan bära dolda instruktioner)",
+                n=n)
             )
     else:
         # I "text" och "stripped" returneras ingen HTML: dess synliga text

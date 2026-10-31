@@ -140,6 +140,12 @@ class Settings(BaseSettings):
     #       själv granskar och skickar från Proton.
     #   "disabled" — även utkasten vägras.
     send_mode: Literal["send", "draft_only", "disabled"] = "send"
+    # PROTONMAIL_LANGUAGE: språket i det klienten ser — verktygens titlar och
+    # beskrivningar, promptar, resurser, serverinstruktionerna och alla fel-
+    # och förklaringstexter (i18n.py). "sv" (standard) eller "en". Verktygens
+    # och parametrarnas namn är alltid desamma. Fel som uppstår innan
+    # inställningarna lästs (den här filen, http_server.py) är på svenska.
+    language: Literal["sv", "en"] = "sv"
     # PROTONMAIL_ALLOWED_RECIPIENTS: kommaseparerad lista med adresser
     # (anna@exempel.se) och/eller domäner (@exempel.se). När den är satt måste
     # VARJE mottagare i ett skick (To, Cc och Bcc, även i send_draft och
@@ -205,9 +211,9 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    @field_validator("send_mode", mode="before")
+    @field_validator("send_mode", "language", mode="before")
     @classmethod
-    def _normalize_send_mode(cls, value: object) -> object:
+    def _normalize_choice(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
 
     @field_validator("allowed_recipients", mode="after")

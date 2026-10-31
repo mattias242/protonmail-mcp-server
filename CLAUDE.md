@@ -33,8 +33,10 @@ startar `MailWatcher` (egna IDLE-anslutningar). Loggning går bara till stderr �
 | `_sdk.py` | Det enda stället som importerar MCP-SDK:ns serverdelar (`MCPServer`, `Context`, `ToolError`, `Resource`, `ResourceTemplate`, `ToolAnnotations`); övriga moduler importerar härifrån |
 | `__main__.py` | `python -m protonmail_mcp` startar `server.main()` |
 | `http_server.py` | HTTP-läget (`protonmail-mcp --http`): Streamable HTTP på `/mcp` bakom API-nyckeln (`ApiKeyProtected`), Host-kontroll mot `PROTONMAIL_HTTP_ALLOWED_HOSTS`, start med uvicorn |
-| `server.py` | Serverinstansen `mcp` (`_GuardedMCPServer` vägrar verktyg efter policy innan de körs), `INSTRUCTIONS` till modellen, `lifespan`, `register_tools()`, `main()` och lyssnaren som gör nya mejl till resursnotiser |
+| `server.py` | Serverinstansen `mcp` (`_GuardedMCPServer` vägrar verktyg efter policy innan de körs och översätter tools/prompts/resources-listorna), `INSTRUCTIONS` till modellen, `apply_language` (språket ur inställningarna), `lifespan`, `register_tools()`, `main()` och lyssnaren som gör nya mejl till resursnotiser |
 | `config.py` | `Settings` (pydantic-settings, prefix `PROTONMAIL_`), tolkning av `ALLOWED_RECIPIENTS` (IDNA2008) och `WATCH_MAILBOXES` |
+| `i18n.py` | Språket i det klienten ser (`PROTONMAIL_LANGUAGE`): `_` översätter svenska texter med platshållare till det aktiva språket, `set_language`/`language`, `translate_lookup` för tabellerna i `texts_en.py` |
+| `texts_en.py` | Engelska texter: `MESSAGES` (svensk text → engelsk), `TOOLS`/`PROMPTS`/`RESOURCES` (titel och beskrivning per namn), `PARAMS` (parameterbeskrivningar) och `INSTRUCTIONS` |
 | `policy.py` | Skrivskydd, skickläge, mottagarlista, mottagar- och timgräns; `write_operation`-dekoratorn och verktygslistorna `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS` |
 | `audit.py` | Granskningslogg: en JSON-rad per skick och skrivande IMAP-operation, maskerad på stderr, fullständig i `PROTONMAIL_AUDIT_LOG` |
 | `imap_client.py` | `IMAPClient`: den delade anslutningen med lås (`_serialized`), `_BridgeProtocol`, validering och kvotering, läsning, sökning, flaggor, flytt, radering, mappar |
@@ -107,6 +109,16 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   `tests/unit/test_efterfix_resurser_verktygsnotiser.py` fäller annars. Strikt typade parametrar (`Annotated`/`Field`
   med gränser, `Literal`, `Mailbox`, `OptionalStr`, `Uid`/`UidArg`); `mailbox` är obligatorisk för allt som utgår
   från ett UID. Docstringen (svenska) säger vad som händer i Proton, vad som inte händer och vilka fel som kan komma.
+- **Allt som når klienten går genom `i18n._`.** Felmeddelanden, `note`-/`warning`-texter, promptarnas texter och
+  annat som modellen eller användaren läser skrivs på svenska som mall med platshållare —
+  `_("Inget meddelande med UID {uid} i {mailbox}.", uid=uid, mailbox=mailbox)` — och får sin engelska
+  översättning i `texts_en.MESSAGES` med samma platshållare (ordföljden får skilja). Ett nytt verktyg får titel
+  och beskrivning i `texts_en.TOOLS`, en ny prompt eller resurs i `PROMPTS`/`RESOURCES`, en ny
+  parameterbeskrivning i `PARAMS`; `tests/unit/test_feat_sprak_en.py` fäller annars. Kod som känner igen ett
+  fel på en fras i texten (`imap_labels.AMBIGUOUS`, `imap_bulk._UNCHECKED`, `_errors._UNREACHABLE_PREFIX`)
+  jämför mot `_(KONSTANT)`. Loggrader (stderr) och fel som uppstår innan inställningarna lästs (`config.py`,
+  `http_server.py`) är bara på svenska. Det registrerade (docstrings, titlar, `INSTRUCTIONS`) förblir svenskt;
+  engelskan byts in när listorna skickas, så kontraktsfacit gäller oförändrat.
 - **Fel är `ValueError` med en begriplig svensk text** som säger vad som hände och vad modellen kan göra.
   `with_error_messages` gör om nätverks-, inloggnings- och SMTP-fel; lösenordet maskas i allt som returneras och
   loggas. Ett skick som delvis levererats ska aldrig se ut som ett misslyckat (modellen skickar då om).
@@ -257,7 +269,7 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   `check_new_emails` efter att märket flyttats men innan svaret nått klienten räknas de mejlen inte längre som nya.
 - Privata API:er som kan gå sönder vid uppgradering av beroenden (testerna täcker dem): `MCPServer`:s
   `_resource_manager._templates` (resursmallar med egna fel) och `_lowlevel_server` (hanterare för
-  `resources/subscribe`), `ServerSession._connection` (en session per anslutning; dess publika `exit_stack` glömmer
+  `resources/subscribe`; `instructions` byts av `server.apply_language`), `ServerSession._connection` (en session per anslutning; dess publika `exit_stack` glömmer
   sessionen vid nedkoppling) och klassbytet till `_BridgeProtocol` på aioimaplib-anslutningen. Testerna når SDK:n
   bara via `tests/sdk_support.py` och servern bara via `_sdk.py`, så ett SDK-byte ändrar i första hand de två.
   `tests/snapshots/mcp_kontrakt.json` är facit för allt en klient ser (scheman, fel, förmågor); skriv om det med

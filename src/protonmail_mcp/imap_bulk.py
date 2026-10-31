@@ -13,6 +13,7 @@ from typing import Any
 
 import aioimaplib
 
+from .i18n import _
 from . import policy
 
 from .imap_client import (
@@ -51,9 +52,10 @@ BulkResult = dict[str, Any]
 def validate_uids(uids: list[str]) -> list[str]:
     """Validerar varje UID och tar bort dubbletter (första förekomsten behålls)."""
     if not uids:
-        raise ValueError("Ange minst ett UID")
+        raise ValueError(_("Ange minst ett UID"))
     if len(uids) > MAX_UIDS:
-        raise ValueError(f"För många UID:n ({len(uids)}) — högst {MAX_UIDS} per anrop")
+        raise ValueError(_("För många UID:n ({n_uids}) — högst {MAX_UIDS} per anrop",
+                   n_uids=len(uids), MAX_UIDS=MAX_UIDS))
     unique: list[str] = []
     for uid in uids:
         _strict_uid(uid)
@@ -66,21 +68,22 @@ def _strict_uid(uid) -> str:
     # isascii/isdigit utöver _validate_uid: UID:na sätts ihop till ett UID-set,
     # så ett avslutande radbyte eller en Unicode-siffra får inte slinka igenom
     if not (isinstance(uid, str) and uid.isascii() and uid.isdigit()):
-        raise ValueError(f"Ogiltigt UID: {uid!r} — måste vara ett heltal")
+        raise ValueError(_("Ogiltigt UID: {uid!r} — måste vara ett heltal", uid=uid))
     return _validate_uid(uid)
 
 
 def uid_set(uids: list[str]) -> str:
     """UID-set för ett IMAP-kommando, t.ex. "1,5,9". Varje UID valideras igen."""
     if not uids:
-        raise ValueError("Tomt UID-set")
+        raise ValueError(_("Tomt UID-set"))
     return ",".join(_strict_uid(uid) for uid in uids)
 
 
 def missing_error(uid: str, mailbox: str) -> str:
     return (
-        f"Inget meddelande med UID {uid} i {mailbox}. "
-        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+        _("Inget meddelande med UID {uid} i {mailbox}. "
+        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från.",
+        uid=uid, mailbox=mailbox)
     )
 
 
@@ -108,7 +111,7 @@ async def existing_uids(imap: IMAPClient, mailbox: str, uids: list[str]) -> tupl
     FETCH ger ValueError för hela anropet — då har inget skrivits.
     """
     resp = await imap._uid("fetch", uid_set(uids), "(UID)")
-    _require_ok(resp, f"Kontrollen av UID:n i {mailbox}")
+    _require_ok(resp, _("Kontrollen av UID:n i {mailbox}", mailbox=mailbox))
     seen: set[int] = set()
     for line in resp.lines:
         m = _UID_RE.search(_decode(line))
@@ -124,7 +127,7 @@ def fail_all(uids: list[str], error: str) -> list[dict[str, str]]:
 
 
 def _failure(what: str, resp) -> str:
-    return f"{what} misslyckades ({resp.result}): {_response_text(resp)}"
+    return _("{what} misslyckades ({result}): {text}", what=what, result=resp.result, text=_response_text(resp))
 
 
 async def _split_after_failure(
@@ -137,9 +140,9 @@ async def _split_after_failure(
     räknas alla som misslyckade.
     """
     try:
-        left, _ = await existing_uids(imap, mailbox, uids)
+        left, _missing = await existing_uids(imap, mailbox, uids)
     except ValueError as exc:
-        return [], fail_all(uids, f"{error} (kunde inte kontrollera vilka som genomfördes: {exc})")
+        return [], fail_all(uids, _("{error} ({unchecked}: {exc})", error=error, unchecked=_(_UNCHECKED), exc=exc))
     left_set = set(left)
     return [u for u in uids if u not in left_set], fail_all(left, error)
 
@@ -159,7 +162,7 @@ async def store_flags(
         if resp.result == "OK":
             ok = found
         else:
-            failed += fail_all(found, _failure(f"{what} i {mailbox}", resp))
+            failed += fail_all(found, _failure(_("{what} i {mailbox}", what=what, mailbox=mailbox), resp))
     return result(uids, ok, failed)
 
 
@@ -167,7 +170,7 @@ async def store_flags(
 @policy.write_operation("set_flags")
 async def set_flags(imap: IMAPClient, mailbox: str, uids: list[str], flags: str, add: bool) -> BulkResult:
     """Sätter eller tar bort flaggor (t.ex. \\Seen) på flera mejl i samma mapp."""
-    return await store_flags(imap, mailbox, uids, flags, add, "Ändringen av flaggorna")
+    return await store_flags(imap, mailbox, uids, flags, add, _("Ändringen av flaggorna"))
 
 
 async def already_in_target(
@@ -204,25 +207,27 @@ async def already_in_target(
     await imap._select(mailbox)
     unclear = [
         {"uid": uid, "error": (
-            f"UID {uid} i {mailbox} flyttades inte till {target}: det går inte att avgöra om "
-            f"mejlet redan ligger där. {target} har flera mejl med samma Message-ID, tid och "
-            f"storlek, och en flytt dit av ett mejl som redan ligger där raderar det permanent. "
-            f"Kontrollera {target} med list_emails och flytta mejlet själv om det behövs."
+            _("UID {uid} i {mailbox} flyttades inte till {target}: det går inte att avgöra om "
+            "mejlet redan ligger där. {target} har flera mejl med samma Message-ID, tid och "
+            "storlek, och en flytt dit av ett mejl som redan ligger där raderar det permanent. "
+            "Kontrollera {target} med list_emails och flytta mejlet själv om det behövs.",
+            uid=uid, mailbox=mailbox, target=target)
         )}
-        for uid, error in errors.items() if AMBIGUOUS in error
+        for uid, error in errors.items() if _(AMBIGUOUS) in error
     ]
     return [uid for uid in sources if uid in found], unclear
 
 
 def already_there_note(uids: list[str], mailbox: str, target: str) -> str:
     """Förklaringen i svaret när mejl redan låg i target och lämnades orörda."""
-    where = "papperskorgen (Trash)" if _mailbox_key(target) == "trash" else target
-    which = "det" if len(uids) == 1 else "dem"
+    where = _("papperskorgen (Trash)") if _mailbox_key(target) == "trash" else target
+    which = _("det") if len(uids) == 1 else _("dem")
     return (
-        f"UID {', '.join(uids)} i {mailbox} ligger redan i {where}: det är samma Proton-mejl "
-        f"som syns i båda vyerna, t.ex. ett mejl till sig själv som ligger i både INBOX och Sent. "
-        f"Inget skickades till Bridge för {which}, eftersom en ny flytt dit skulle radera "
-        f"mejlet permanent. Bridge-vyn uppdateras inom ~40 s."
+        _("UID {uids} i {mailbox} ligger redan i {where}: det är samma Proton-mejl "
+        "som syns i båda vyerna, t.ex. ett mejl till sig själv som ligger i både INBOX och Sent. "
+        "Inget skickades till Bridge för {which}, eftersom en ny flytt dit skulle radera "
+        "mejlet permanent. Bridge-vyn uppdateras inom ~40 s.",
+        uids=', '.join(uids), mailbox=mailbox, where=where, which=which)
     )
 
 
@@ -242,7 +247,8 @@ async def _move_found(imap: IMAPClient, mailbox: str, uids: list[str], target: s
             ok += to_move
         else:
             moved, more = await _split_after_failure(
-                imap, mailbox, to_move, _failure(f"Flytten från {mailbox} till {target}", resp)
+                imap, mailbox, to_move, _failure(_("Flytten från {mailbox} till {target}",
+                                   mailbox=mailbox, target=target), resp)
             )
             ok += moved
             failed += more
@@ -278,22 +284,25 @@ async def delete(imap: IMAPClient, mailbox: str, uids: list[str], permanent: boo
     if not permanent:
         if key == "trash":
             raise ValueError(
-                "Mejlet ligger redan i Trash. Använd permanent=True för att radera det permanent."
+                _("Mejlet ligger redan i Trash. Använd permanent=True för att radera det permanent.")
             )
         _check_move(mailbox, "Trash")
         return await _move_found(imap, mailbox, uids, "Trash")
 
     if key not in _READD_DELETES:
         raise ValueError(
-            f"Permanent radering görs bara i Trash eller Drafts, inte i {mailbox}. "
-            "Ta bort mejlet utan permanent först, så hamnar det i Trash."
+            _("Permanent radering görs bara i Trash eller Drafts, inte i {mailbox}. "
+            "Ta bort mejlet utan permanent först, så hamnar det i Trash.",
+            mailbox=mailbox)
         )
     await imap._ensure_connected()
     await imap._select(mailbox)
     found, failed = await existing_uids(imap, mailbox, uids)
     ok: list[str] = []
     if found:
-        ok, more = await permanent_delete_found(imap, mailbox, found, f"Den permanenta raderingen i {mailbox}")
+        ok, more = await permanent_delete_found(
+            imap, mailbox, found, _("Den permanenta raderingen i {mailbox}", mailbox=mailbox)
+        )
         failed += more
     return result(uids, ok, failed)
 
@@ -333,7 +342,7 @@ async def permanent_delete_found(
     targets = uid_set(found)
     resp = await imap._uid("store", targets, "+FLAGS", r"(\Deleted)")
     if resp.result != "OK":
-        return [], fail_all(found, _failure(f"Borttagningsmarkeringen i {mailbox}", resp))
+        return [], fail_all(found, _failure(_("Borttagningsmarkeringen i {mailbox}", mailbox=mailbox), resp))
     resp = await imap._uid("expunge", targets)
     if resp.result == "OK":
         return found, []
@@ -344,7 +353,7 @@ async def permanent_delete_found(
         return await _split_after_failure(imap, mailbox, found, error)
     identities = await _identities_for_check(imap, mailbox, found)
     vanished, failed = await _split_after_failure(imap, mailbox, found, error)
-    if failed and not any(_UNCHECKED in f["error"] for f in failed):
+    if failed and not any(_(_UNCHECKED) in f["error"] for f in failed):
         gone, failed = await _wait_until_gone(imap, mailbox, [f["uid"] for f in failed], error)
         vanished += gone
     ok, more = await _settle_vanished(imap, mailbox, vanished, identities)
@@ -387,15 +396,18 @@ async def _wait_until_gone(
         try:
             await imap._ensure_connected()
             await imap._select(mailbox)
-            left, _ = await existing_uids(imap, mailbox, left)
+            left, _missing = await existing_uids(imap, mailbox, left)
         except BEST_EFFORT_ERRORS as exc:
             detail = drop_connection_after(imap, exc)
             left_set = set(left)
-            return [u for u in uids if u not in left_set], fail_all(left, f"{error} ({_UNCHECKED}: {detail})")
+            return [u for u in uids if u not in left_set], fail_all(
+                left, _("{error} ({unchecked}: {detail})", error=error, unchecked=_(_UNCHECKED), detail=detail)
+            )
         if not left or time.monotonic() >= deadline:
             break
     left_set = set(left)
-    note = f" Mejlet finns kvar i {mailbox} efter {timeout:g} s väntan på att Bridge skulle ta bort det."
+    note = _(" Mejlet finns kvar i {mailbox} efter {timeout:g} s väntan på att Bridge skulle ta bort det.",
+             mailbox=mailbox, timeout=timeout)
     return [u for u in uids if u not in left_set], fail_all(left, error + note)
 
 
@@ -415,10 +427,11 @@ async def _sleep_unlocked(imap: IMAPClient, seconds: float) -> None:
 
 def _maybe_in_all_mail(uid: str, mailbox: str, why: str) -> str:
     return (
-        f"Mejlet med UID {uid} försvann ur {mailbox}, men {why}. Bridge svarade Code=2501 och "
-        f"avbröt då raderingen: mejlen i samma omgång kan ha tappat {mailbox} utan att raderas, "
-        f"och ligger i så fall kvar i All Mail utan mapp. Kontrollera All Mail (search_emails "
-        f"med mailbox=\"All Mail\") och radera mejlet därifrån via Trash om det finns kvar."
+        _("Mejlet med UID {uid} försvann ur {mailbox}, men {why}. Bridge svarade Code=2501 och "
+        "avbröt då raderingen: mejlen i samma omgång kan ha tappat {mailbox} utan att raderas, "
+        "och ligger i så fall kvar i All Mail utan mapp. Kontrollera All Mail (search_emails "
+        "med mailbox=\"All Mail\") och radera mejlet därifrån via Trash om det finns kvar.",
+        uid=uid, mailbox=mailbox, why=why)
     )
 
 
@@ -438,11 +451,12 @@ async def _settle_vanished(
     if not vanished:
         return [], []
     if isinstance(identities, str):
-        why = f"det gick inte att hämta dess identitet för kontrollen i All Mail ({identities})"
+        why = _("det gick inte att hämta dess identitet för kontrollen i All Mail ({identities})",
+                identities=identities)
         return [], [{"uid": uid, "error": _maybe_in_all_mail(uid, mailbox, why)} for uid in vanished]
     failed = [
         {"uid": uid, "error": _maybe_in_all_mail(
-            uid, mailbox, "det saknar både X-Pm-Internal-Id och Message-ID, så det går inte att leta upp i All Mail"
+            uid, mailbox, _("det saknar både X-Pm-Internal-Id och Message-ID, så det går inte att leta upp i All Mail")
         )}
         for uid in vanished if not searchable(identities.get(uid, {}))
     ]
@@ -457,15 +471,15 @@ async def _settle_vanished(
     except BEST_EFFORT_ERRORS as exc:
         detail = drop_connection_after(imap, exc)
         logger.warning("Kunde inte kontrollera i All Mail efter Code=2501: %s", detail)
-        why = f"kontrollen i All Mail misslyckades ({detail})"
+        why = _("kontrollen i All Mail misslyckades ({detail})", detail=detail)
         return [], failed + [{"uid": uid, "error": _maybe_in_all_mail(uid, mailbox, why)} for uid in sources]
-    ok = [uid for uid, error in errors.items() if AMBIGUOUS not in error]
+    ok = [uid for uid, error in errors.items() if _(AMBIGUOUS) not in error]
     failed += [
         {"uid": uid, "error": _maybe_in_all_mail(
-            uid, mailbox, "All Mail har flera mejl som inte går att skilja från det, så det går inte att "
-            "avgöra om det raderades"
+            uid, mailbox, _("All Mail har flera mejl som inte går att skilja från det, så det går inte att "
+            "avgöra om det raderades")
         )}
-        for uid, error in errors.items() if AMBIGUOUS in error
+        for uid, error in errors.items() if _(AMBIGUOUS) in error
     ]
     pending = list(orphans.items())
     for i, (src_uid, all_mail_uid) in enumerate(pending):
@@ -477,8 +491,9 @@ async def _settle_vanished(
             detail = drop_connection_after(imap, exc)
             logger.warning("Återställningen via Trash avbröts: %s", detail)
             why = (
-                f"det låg kvar i All Mail utan mapp och raderingen via Trash avbröts ({detail}); "
-                "det kan ligga kvar i Trash eller bara i All Mail"
+                _("det låg kvar i All Mail utan mapp och raderingen via Trash avbröts ({detail}); "
+                "det kan ligga kvar i Trash eller bara i All Mail",
+                detail=detail)
             )
             failed += [
                 {"uid": uid, "error": _maybe_in_all_mail(uid, mailbox, why)} for uid, _ in pending[i:]
@@ -486,10 +501,11 @@ async def _settle_vanished(
             break
         if problem:
             failed.append({"uid": src_uid, "error": (
-                f"Mejlet med UID {src_uid} försvann ur {mailbox} men Proton raderade det inte: det låg "
-                f"kvar i All Mail utan mapp (UID {all_mail_uid} där). Det händer med alla mejl, även "
-                f"utkast, i en omgång där Bridge svarar Code=2501. Ett nytt försök via Trash "
-                f"misslyckades: {problem}. Mejlet kan ligga kvar i Trash eller bara i All Mail."
+                _("Mejlet med UID {src_uid} försvann ur {mailbox} men Proton raderade det inte: det låg "
+                "kvar i All Mail utan mapp (UID {all_mail_uid} där). Det händer med alla mejl, även "
+                "utkast, i en omgång där Bridge svarar Code=2501. Ett nytt försök via Trash "
+                "misslyckades: {problem}. Mejlet kan ligga kvar i Trash eller bara i All Mail.",
+                src_uid=src_uid, mailbox=mailbox, all_mail_uid=all_mail_uid, problem=problem)
             )})
         else:
             ok.append(src_uid)
@@ -504,17 +520,17 @@ async def _delete_orphan(imap: IMAPClient, src_uid: str, all_mail_uid: str, iden
     await imap._select(ALL_MAIL)
     resp = await imap._uid("copy", uid_set([all_mail_uid]), _quote_mailbox(TRASH))
     if resp.result != "OK":
-        return _failure(f"Kopieringen till {TRASH}", resp)
+        return _failure(_("Kopieringen till {TRASH}", TRASH=TRASH), resp)
     await imap._select(TRASH)
     found, errors = await _find_in_label(imap, TRASH, {src_uid: identity})
     if src_uid not in found:
-        return f"mejlet hittades inte entydigt i {TRASH} efter kopieringen"
+        return _("mejlet hittades inte entydigt i {TRASH} efter kopieringen", TRASH=TRASH)
     trash_uid = uid_set([found[src_uid]])
     resp = await imap._uid("store", trash_uid, "+FLAGS", r"(\Deleted)")
     if resp.result != "OK":
-        return _failure(f"Borttagningsmarkeringen i {TRASH}", resp)
+        return _failure(_("Borttagningsmarkeringen i {TRASH}", TRASH=TRASH), resp)
     resp = await imap._uid("expunge", trash_uid)
     if resp.result != "OK":
         await imap._uid("store", trash_uid, "-FLAGS", r"(\Deleted)")
-        return _failure(f"Den permanenta raderingen i {TRASH}", resp)
+        return _failure(_("Den permanenta raderingen i {TRASH}", TRASH=TRASH), resp)
     return None

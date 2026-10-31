@@ -23,6 +23,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
+from .i18n import _
 from . import audit
 from .config import normalize_domain, parse_allowed_recipients
 
@@ -66,8 +67,9 @@ def require_write(settings: Any, action: str) -> None:
     """ValueError om kontot är skrivskyddat (PROTONMAIL_READ_ONLY=true)."""
     if _read_only(settings):
         raise ValueError(
-            f"Kontot är skrivskyddat för den här servern (PROTONMAIL_READ_ONLY=true), "
-            f"så {action} vägras. Inget har ändrats eller skickats."
+            _("Kontot är skrivskyddat för den här servern (PROTONMAIL_READ_ONLY=true), "
+            "så {action} vägras. Inget har ändrats eller skickats.",
+            action=action)
         )
 
 
@@ -88,13 +90,15 @@ def require_send(settings: Any, action: str) -> None:
     mode = _send_mode(settings)
     if mode == "draft_only":
         raise ValueError(
-            f"Servern får inte skicka e-post (PROTONMAIL_SEND_MODE=draft_only), så "
-            f"{action} vägras och inget skickades. {_DRAFT_HINT}"
+            _("Servern får inte skicka e-post (PROTONMAIL_SEND_MODE=draft_only), så "
+            "{action} vägras och inget skickades. {draft_hint}",
+            action=action, draft_hint=_(_DRAFT_HINT))
         )
     if mode == "disabled":
         raise ValueError(
-            f"Servern får varken skicka e-post eller skapa utkast "
-            f"(PROTONMAIL_SEND_MODE=disabled), så {action} vägras och inget skickades."
+            _("Servern får varken skicka e-post eller skapa utkast "
+            "(PROTONMAIL_SEND_MODE=disabled), så {action} vägras och inget skickades.",
+            action=action)
         )
 
 
@@ -103,8 +107,9 @@ def require_draft(settings: Any, action: str) -> None:
     require_write(settings, action)
     if _send_mode(settings) == "disabled":
         raise ValueError(
-            f"Servern får varken skicka e-post eller skapa utkast "
-            f"(PROTONMAIL_SEND_MODE=disabled), så {action} vägras. Inget har sparats."
+            _("Servern får varken skicka e-post eller skapa utkast "
+            "(PROTONMAIL_SEND_MODE=disabled), så {action} vägras. Inget har sparats.",
+            action=action)
         )
 
 
@@ -138,8 +143,9 @@ def check_recipients(settings: Any, recipients: list[str]) -> None:
             refused.append(address)
     if refused:
         raise ValueError(
-            f"Skicket vägrades: {', '.join(refused)} finns inte bland de tillåtna "
-            f"mottagarna (PROTONMAIL_ALLOWED_RECIPIENTS). Inget mejl skickades till någon."
+            _("Skicket vägrades: {refused} finns inte bland de tillåtna "
+            "mottagarna (PROTONMAIL_ALLOWED_RECIPIENTS). Inget mejl skickades till någon.",
+            refused=', '.join(refused))
         )
 
 
@@ -154,8 +160,9 @@ def check_recipient_count(settings: Any, recipients: list[str]) -> None:
     count = len({address.lower() for address in recipients})
     if limit and count > limit:
         raise ValueError(
-            f"Skicket vägrades: {count} mottagare, men högst {limit} per mejl är tillåtet "
-            f"(PROTONMAIL_MAX_RECIPIENTS). Inget mejl skickades."
+            _("Skicket vägrades: {count} mottagare, men högst {limit} per mejl är tillåtet "
+            "(PROTONMAIL_MAX_RECIPIENTS). Inget mejl skickades.",
+            count=count, limit=limit)
         )
 
 
@@ -165,9 +172,13 @@ _WINDOW = 3600.0
 def _wait_text(seconds: float) -> str:
     if seconds >= 60:
         minutes = math.ceil(seconds / 60)
-        return f"om {minutes} minut{'er' if minutes != 1 else ''}"
+        if minutes == 1:
+            return _("om {minutes} minut", minutes=minutes)
+        return _("om {minutes} minuter", minutes=minutes)
     whole = max(1, math.ceil(seconds))
-    return f"om {whole} sekund{'er' if whole != 1 else ''}"
+    if whole == 1:
+        return _("om {whole} sekund", whole=whole)
+    return _("om {whole} sekunder", whole=whole)
 
 
 class SendRateLimiter:
@@ -192,9 +203,10 @@ class SendRateLimiter:
             wait = self._times[-limit] + _WINDOW - now
             at = (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M:%S")
             raise ValueError(
-                f"Skicket vägrades: högst {limit} skick per timme är tillåtet "
-                f"(PROTONMAIL_MAX_SENDS_PER_HOUR), och gränsen är nådd. Nästa skick går "
-                f"{_wait_text(wait)} (kl. {at}). Inget mejl skickades."
+                _("Skicket vägrades: högst {limit} skick per timme är tillåtet "
+                "(PROTONMAIL_MAX_SENDS_PER_HOUR), och gränsen är nådd. Nästa skick går "
+                "{wait} (kl. {at}). Inget mejl skickades.",
+                limit=limit, wait=_wait_text(wait), at=at)
             )
         self._times.append(now)
 

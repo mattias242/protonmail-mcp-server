@@ -25,6 +25,7 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from .i18n import _
 from .imap_client import (
     _FETCH_CHUNK_SIZE,
     _CONTROL_CHAR_RE,
@@ -139,7 +140,7 @@ async def _fetch_thread_metadata(imap, seqnums: list[str]) -> list[dict[str, Any
         resp = await imap._client.fetch(
             ",".join(chunk), f"(UID FLAGS BODY.PEEK[HEADER.FIELDS ({_THREAD_FIELDS})])"
         )
-        _require_ok(resp, f"Hämtningen av konversationens mejl i {ALL_MAIL}")
+        _require_ok(resp, _("Hämtningen av konversationens mejl i {ALL_MAIL}", ALL_MAIL=ALL_MAIL))
         msgs += _parse_fetch_metadata(resp.lines, extra_headers=_EXTRA)
     return msgs
 
@@ -149,12 +150,13 @@ async def _read_start(imap, uid: str, mailbox: str) -> dict[str, Any]:
     await imap._ensure_connected()
     await imap._select(mailbox)
     resp = await imap._uid("fetch", uid, f"(UID FLAGS BODY.PEEK[HEADER.FIELDS ({_THREAD_FIELDS})])")
-    _require_ok(resp, f"Hämtningen av UID {uid} i {mailbox}")
+    _require_ok(resp, _("Hämtningen av UID {uid} i {mailbox}", uid=uid, mailbox=mailbox))
     start = next((m for m in _parse_fetch_metadata(resp.lines, extra_headers=_EXTRA) if m["uid"] == uid), None)
     if start is None:
         raise ValueError(
-            f"Inget meddelande med UID {uid} i {mailbox}. "
-            "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+            _("Inget meddelande med UID {uid} i {mailbox}. "
+            "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från.",
+            uid=uid, mailbox=mailbox)
         )
     return start
 
@@ -188,7 +190,8 @@ async def get_thread(imap, uid: str, mailbox: str, max_messages: int = 50) -> di
     safe_uid = _validate_uid(uid)
     _quote_mailbox(mailbox)
     if isinstance(max_messages, bool) or not isinstance(max_messages, int) or not 1 <= max_messages <= _MAX_LIMIT:
-        raise ValueError(f"max_messages måste vara ett heltal 1–{_MAX_LIMIT} (fick {max_messages!r})")
+        raise ValueError(_("max_messages måste vara ett heltal 1–{_MAX_LIMIT} (fick {max_messages!r})",
+                           _MAX_LIMIT=_MAX_LIMIT, max_messages=max_messages))
 
     start = await _read_start(imap, safe_uid, mailbox)
     own_id = _message_ids(start["message_id"])
@@ -199,9 +202,10 @@ async def get_thread(imap, uid: str, mailbox: str, max_messages: int = 50) -> di
             "total": 1,
             "complete": False,
             "note": (
-                "Mejlet saknar Message-ID, så konversationen kan inte sökas fram. "
-                f"Bara mejlet självt returneras; dess uid gäller i {mailbox}, så läs det "
-                f"med get_email(uid, mailbox={json.dumps(mailbox, ensure_ascii=False)})."
+                _("Mejlet saknar Message-ID, så konversationen kan inte sökas fram. "
+                "Bara mejlet självt returneras; dess uid gäller i {mailbox}, så läs det "
+                "med get_email(uid, mailbox={quoted}).",
+                mailbox=mailbox, quoted=json.dumps(mailbox, ensure_ascii=False))
             ),
         }
 
@@ -232,10 +236,11 @@ async def get_thread(imap, uid: str, mailbox: str, max_messages: int = 50) -> di
         if not pending:
             break
         if searches >= _MAX_SEARCHES or len(searched) >= _MAX_IDS:
-            stopped = f"Sökningen avbröts efter {searches} sökningar i {ALL_MAIL} (taket per anrop)."
+            stopped = _("Sökningen avbröts efter {searches} sökningar i {ALL_MAIL} (taket per anrop).",
+                        searches=searches, ALL_MAIL=ALL_MAIL)
             break
         if _clock() >= deadline:
-            stopped = f"Sökningen avbröts vid tidsgränsen på {_TIME_BUDGET_S:.0f} s."
+            stopped = _("Sökningen avbröts vid tidsgränsen på {_TIME_BUDGET_S:.0f} s.", _TIME_BUDGET_S=_TIME_BUDGET_S)
             break
         batch = [msg_id for _, msg_id in pending[:min(_IDS_PER_SEARCH, _MAX_IDS - len(searched))]]
         metas = await _search_step(imap, batch)
@@ -259,16 +264,19 @@ async def get_thread(imap, uid: str, mailbox: str, max_messages: int = 50) -> di
             keep = [start_in_all_mail, *messages[-(max_messages - 1):]] if max_messages > 1 else [start_in_all_mail]
         messages = sorted(keep, key=_date_key)
         notes.append(
-            f"Konversationen har fler mejl än max_messages ({max_messages}); "
-            "startmejlet och de senaste returneras."
+            _("Konversationen har fler mejl än max_messages ({max_messages}); "
+            "startmejlet och de senaste returneras.",
+            max_messages=max_messages)
         )
     elif stopped or dropped:
-        reason = stopped or f"Ett mejl har fler än {_MAX_IDS} ID:n i References; bara de närmaste söktes."
-        notes.append(f"{reason} {unsearched} ID:n söktes inte, så fler mejl kan finnas.")
+        reason = stopped or _("Ett mejl har fler än {_MAX_IDS} ID:n i References; bara de närmaste söktes.",
+                              _MAX_IDS=_MAX_IDS)
+        notes.append(_("{reason} {unsearched} ID:n söktes inte, så fler mejl kan finnas.",
+               reason=reason, unsearched=unsearched))
     elif unsearched:
-        notes.append("Sökningen avbröts efter maximalt antal rundor; fler mejl kan finnas.")
+        notes.append(_("Sökningen avbröts efter maximalt antal rundor; fler mejl kan finnas."))
     if start_in_all_mail is None:
-        notes.append(f"Startmejlet hittades inte i {ALL_MAIL}.")
+        notes.append(_("Startmejlet hittades inte i {ALL_MAIL}.", ALL_MAIL=ALL_MAIL))
 
     return {
         "mailbox": ALL_MAIL,

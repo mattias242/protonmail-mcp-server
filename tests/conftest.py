@@ -24,6 +24,21 @@ def _block_bridge_ports(request, monkeypatch):
     monkeypatch.setattr(asyncio.base_events.BaseEventLoop, "create_connection", guarded)
 
 
+@pytest.fixture(autouse=True)
+def _default_language():
+    """Varje test börjar på svenska: ett test som bytt språk (PROTONMAIL_LANGUAGE=en,
+    i18n.set_language) får inte färga nästa."""
+    yield
+    import sys
+
+    from protonmail_mcp import i18n
+
+    i18n.set_language(i18n.DEFAULT)
+    server = sys.modules.get("protonmail_mcp.server")
+    if server is not None:
+        server.apply_language(i18n.DEFAULT)
+
+
 @pytest.fixture
 def sample_raw_email():
     """Ett minimalt RFC822-meddelande för parsertester."""

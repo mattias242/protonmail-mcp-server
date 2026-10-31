@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from email.message import EmailMessage, Message
 from typing import Any, Literal
 
+from ..i18n import _
 from .._sdk import Context
 
 from .. import imap_drafts
@@ -38,8 +39,9 @@ _INTERNAL_ID_DOMAIN = "protonmail.internalid"
 
 def _not_found(uid: str, mailbox: str) -> ValueError:
     return ValueError(
-        f"Inget meddelande med UID {uid} i {mailbox}. "
-        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+        _("Inget meddelande med UID {uid} i {mailbox}. "
+        "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från.",
+        uid=uid, mailbox=mailbox)
     )
 
 
@@ -91,8 +93,8 @@ def _draft_result(uid: str | None, msg: EmailMessage) -> dict[str, Any]:
     result: dict[str, Any] = {"uid": uid, "mailbox": DRAFTS, "message_id": msg["Message-ID"]}
     if uid is None:
         result["note"] = (
-            "Utkastet sparades, men Bridge angav inget UID. Hitta det med "
-            'list_emails(mailbox="Drafts").'
+            _("Utkastet sparades, men Bridge angav inget UID. Hitta det med "
+            'list_emails(mailbox="Drafts").')
         )
     return result
 
@@ -361,7 +363,8 @@ async def update_draft(
             Kör då INTE update_draft igen (det skapar ett utkast till).
     """
     if mailbox != DRAFTS:
-        raise ValueError(f"Bara utkast i {DRAFTS} kan uppdateras, inte i {mailbox!r}")
+        raise ValueError(_("Bara utkast i {DRAFTS} kan uppdateras, inte i {mailbox!r}",
+                           DRAFTS=DRAFTS, mailbox=mailbox))
     app = _get_app(ctx)
     old_raw = await app.imap.get_message(DRAFTS, uid)
     if old_raw is None:
@@ -431,13 +434,15 @@ async def send_draft(
         SMTPPartialDeliveryError: servern vägrade några av mottagarna.
     """
     if mailbox != DRAFTS:
-        raise ValueError(f"Bara utkast i {DRAFTS} kan skickas, inte i {mailbox!r}")
+        raise ValueError(_("Bara utkast i {DRAFTS} kan skickas, inte i {mailbox!r}",
+                           DRAFTS=DRAFTS, mailbox=mailbox))
     app = _get_app(ctx)
     raw = await app.imap.get_message(DRAFTS, uid)
     if raw is None:
         raise ValueError(
-            f"Inget utkast med UID {uid} i {DRAFTS}. "
-            'Hitta utkasten med list_emails(mailbox="Drafts").'
+            _("Inget utkast med UID {uid} i {DRAFTS}. "
+            'Hitta utkasten med list_emails(mailbox="Drafts").',
+            uid=uid, DRAFTS=DRAFTS)
         )
     msg = email.message_from_bytes(raw, policy=email.policy.SMTP)
     # Samma tolkning som get_email visar och som send_prepared_message skickar
@@ -460,16 +465,18 @@ async def send_draft(
             # visar det tills Bridge har synkat, och raderingen därifrån nekas
             logger.info("Utkastet UID %s togs bort av Bridge vid skicket: %s", uid, exc)
             result["note"] = (
-                f"Bridge tog bort utkastet i Proton när det skickades. Det kan synas i "
-                f"{DRAFTS} en kort stund till, tills Bridge har synkat. Skicka inte igen."
+                _("Bridge tog bort utkastet i Proton när det skickades. Det kan synas i "
+                "{DRAFTS} en kort stund till, tills Bridge har synkat. Skicka inte igen.",
+                DRAFTS=DRAFTS)
             )
             return result
         logger.warning("Utkastet UID %s skickades men kunde inte tas bort: %s", uid, exc)
         result["draft_deleted"] = False
         result["warning"] = (
-            f"Mejlet skickades, men utkastet (UID {uid}) kunde inte tas bort ur "
-            f"{DRAFTS}: {exc}. Skicka inte igen — ta bort utkastet med "
-            f'delete_email(uid="{uid}", mailbox="Drafts", permanent=True).'
+            _("Mejlet skickades, men utkastet (UID {uid}) kunde inte tas bort ur "
+            "{DRAFTS}: {exc}. Skicka inte igen — ta bort utkastet med "
+            'delete_email(uid="{uid}", mailbox="Drafts", permanent=True).',
+            uid=uid, DRAFTS=DRAFTS, exc=exc)
         )
     return result
 

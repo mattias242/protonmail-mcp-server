@@ -12,6 +12,7 @@ from typing import Sequence
 
 import aiosmtplib
 
+from .i18n import _
 from . import audit, policy
 from .config import Settings, idna_domain
 from .email_parser import parse_addresses
@@ -64,19 +65,21 @@ def _reject_hidden_characters(addr: str, spec: str) -> None:
         # get_email visar ett dolt tecken i en adress som "[U+E0041]"; en
         # kopierad visad adress är inte den adress som mejlet kom ifrån
         raise ValueError(
-            f"Ogiltig e-postadress: {ascii(addr)} innehåller \"[U+…]\", som är hur get_email "
+            _("Ogiltig e-postadress: {addr} innehåller \"[U+…]\", som är hur get_email "
             "visar dolda tecken i en adress. Den riktiga adressen innehåller alltså dolda tecken "
             "och ser ut som en annan adress än den som visas; sådana adresser vägras, så inget "
-            "skickas eller sparas. Fråga användaren vilken adress mejlet ska till."
+            "skickas eller sparas. Fråga användaren vilken adress mejlet ska till.",
+            addr=ascii(addr))
         )
     removed = sanitize_text(spec).removed
     if removed:
-        kinds = ", ".join(f"{_HIDDEN_KINDS.get(k, k)}: {n}" for k, n in removed.items())
+        kinds = ", ".join(f"{_(_HIDDEN_KINDS.get(k, k))}: {n}" for k, n in removed.items())
         # ascii(): de dolda tecknen syns som \U000e0041 osv. i felet
         raise ValueError(
-            f"Ogiltig e-postadress: {ascii(addr)} innehåller dolda tecken ({kinds}). "
+            _("Ogiltig e-postadress: {addr} innehåller dolda tecken ({kinds}). "
             "En sådan adress ser ut som en annan adress än den som mejlet skulle gå till, "
-            "så inget skickas eller sparas. Skriv adressen utan de dolda tecknen."
+            "så inget skickas eller sparas. Skriv adressen utan de dolda tecknen.",
+            addr=ascii(addr), kinds=kinds)
         )
 
 
@@ -89,11 +92,11 @@ def _validate_email_addr(addr: str) -> str:
     lägga i ett mejl vägras här som ogiltig, innan något byggs eller skickas.
     """
     if '\r' in addr or '\n' in addr:
-        raise ValueError(f"Ogiltig e-postadress (CRLF): {addr!r}")
-    _, parsed = parseaddr(addr)
+        raise ValueError(_("Ogiltig e-postadress (CRLF): {addr!r}", addr=addr))
+    _name, parsed = parseaddr(addr)
     _reject_hidden_characters(addr, parsed)
     if not parsed or not _EMAIL_RE.match(parsed):
-        raise ValueError(f"Ogiltig e-postadress: {addr!r}")
+        raise ValueError(_("Ogiltig e-postadress: {addr!r}", addr=addr))
     _to_address(addr)
     return addr
 
@@ -113,10 +116,11 @@ class SMTPPartialDeliveryError(aiosmtplib.SMTPException):
             f"{addr} ({code} {text})" for addr, (code, text) in refused.items()
         )
         super().__init__(
-            f"E-posten skickades till {len(delivered)} mottagare "
-            f"({', '.join(delivered)}), men servern vägrade {len(refused)}: "
-            f"{details}. Skicka inte om till alla — de som redan fått mejlet "
-            f"får det då två gånger."
+            _("E-posten skickades till {n_delivered} mottagare "
+            "({delivered}), men servern vägrade {n_refused}: "
+            "{details}. Skicka inte om till alla — de som redan fått mejlet "
+            "får det då två gånger.",
+            n_delivered=len(delivered), delivered=", ".join(delivered), n_refused=len(refused), details=details)
         )
 
 
@@ -129,19 +133,19 @@ def _to_address(addr: str) -> Address:
     RCPT TO blir ren ASCII.
     """
     name, spec = parseaddr(addr)
-    local, _, domain = spec.rpartition("@")
+    local, _at, domain = spec.rpartition("@")
     if not domain.isascii():
         try:
             domain = idna_domain(domain)
         except UnicodeError:
-            raise ValueError(f"Ogiltig e-postadress (domän): {addr!r}") from None
+            raise ValueError(_("Ogiltig e-postadress (domän): {addr!r}", addr=addr)) from None
     try:
         return Address(display_name=name, addr_spec=f"{local}@{domain}")
     except Exception:
         # email.headerregistry kastar HeaderParseError (inte ValueError) för
         # t.ex. en oavslutad citerad lokaldel. Utan kedjan (from None): ett
         # stackspår med adressen (kanske Bcc) får inte hamna i stderr-loggen.
-        raise ValueError(f"Ogiltig e-postadress: {addr!r}") from None
+        raise ValueError(_("Ogiltig e-postadress: {addr!r}", addr=addr)) from None
 
 
 def _set_unstructured(msg: EmailMessage, name: str, value: str) -> None:
@@ -161,10 +165,10 @@ def _set_unstructured(msg: EmailMessage, name: str, value: str) -> None:
 def _validate_subject(subject: str) -> str:
     """Kastar ValueError om ämnesraden innehåller CRLF eller är orimligt lång."""
     if '\r' in subject or '\n' in subject:
-        raise ValueError("Ämnesraden får inte innehålla radbrytningar")
+        raise ValueError(_("Ämnesraden får inte innehålla radbrytningar"))
     if len(subject) > _MAX_SUBJECT_LENGTH:
         raise ValueError(
-            f"Ämnesraden är för lång (max {_MAX_SUBJECT_LENGTH} tecken)"
+            _("Ämnesraden är för lång (max {_MAX_SUBJECT_LENGTH} tecken)", _MAX_SUBJECT_LENGTH=_MAX_SUBJECT_LENGTH)
         )
     return subject
 
@@ -196,8 +200,9 @@ def _recipient_lists(
     total = sum(len(lst) for lst in lists)
     if total > MAX_RECIPIENT_ENTRIES:
         raise ValueError(
-            f"Mottagarlistan har för många adresser ({total} i To, Cc och Bcc tillsammans; "
-            f"högst {MAX_RECIPIENT_ENTRIES}). Inget mejl skickades eller sparades."
+            _("Mottagarlistan har för många adresser ({total} i To, Cc och Bcc tillsammans; "
+            "högst {MAX_RECIPIENT_ENTRIES}). Inget mejl skickades eller sparades.",
+            total=total, MAX_RECIPIENT_ENTRIES=MAX_RECIPIENT_ENTRIES)
         )
     return lists
 
@@ -298,7 +303,7 @@ def _header_addr_specs(msg: Message, name: str) -> list[str]:
             continue
         text = str(value)
         if len(text) > _MAX_ADDRESS_HEADER_CHARS:
-            raise ValueError(f"{name}-headern är orimligt stor ({len(text)} tecken)")
+            raise ValueError(_("{name}-headern är orimligt stor ({n_text} tecken)", name=name, n_text=len(text)))
         if not text.isascii():
             # Råa UTF-8-headers (RFC 6532) kommer som surrogat-escapes
             data = text.encode("utf-8", "surrogateescape")
@@ -310,7 +315,7 @@ def _header_addr_specs(msg: Message, name: str) -> list[str]:
             header = email.policy.SMTP.header_fetch_parse(key, text)
             specs.extend(address.addr_spec for address in header.addresses)
         except Exception as exc:  # parsern kan krascha på trasiga adresser (t.ex. IndexError)
-            raise ValueError(f"Ogiltig e-postadress i {name}: {text!r}") from exc
+            raise ValueError(_("Ogiltig e-postadress i {name}: {text!r}", name=name, text=text)) from exc
     return specs
 
 
@@ -352,8 +357,9 @@ def prepared_recipients(msg: Message) -> dict[str, list[str]]:
         values = [value for k, value in msg.raw_items() if k.lower() == key]
         if len(values) > 1:
             raise ValueError(
-                f"Utkastet har {len(values)} {name}-rubriker. get_email visar bara den "
-                f"första, så utkastet skickas inte — skriv om det med update_draft."
+                _("Utkastet har {n_values} {name}-rubriker. get_email visar bara den "
+                "första, så utkastet skickas inte — skriv om det med update_draft.",
+                n_values=len(values), name=name)
             )
         structural = _header_addr_specs(msg, name)
         shown = [addr for _, addr in parse_addresses(values[0])] if values else []
@@ -361,13 +367,14 @@ def prepared_recipients(msg: Message) -> dict[str, list[str]]:
             _validate_email_addr(addr)
         if shown != structural:
             raise ValueError(
-                f"{name}-rubriken kan inte tolkas entydigt: get_email visar "
-                f"{shown or 'inga adresser'}, men rubriken innehåller {structural}. "
-                "Utkastet skickas inte — skriv om adresserna med update_draft."
+                _("{name}-rubriken kan inte tolkas entydigt: get_email visar "
+                "{shown}, men rubriken innehåller {structural}. "
+                "Utkastet skickas inte — skriv om adresserna med update_draft.",
+                name=name, shown=shown or _("inga adresser"), structural=structural)
             )
         result[key] = [_to_address(addr).addr_spec for addr in shown]
     if not any(result.values()):
-        raise ValueError("Meddelandet saknar mottagare (To, Cc och Bcc är tomma)")
+        raise ValueError(_("Meddelandet saknar mottagare (To, Cc och Bcc är tomma)"))
     return result
 
 
