@@ -377,7 +377,7 @@ async def add_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str)
 
 
 @_serialized
-@policy.write_operation("remove_label")
+@policy.write_operation("remove_label", destructive=True)
 async def remove_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str) -> BulkResult:
     """Tar bort etiketten från mejlen utan att flytta eller radera dem.
 

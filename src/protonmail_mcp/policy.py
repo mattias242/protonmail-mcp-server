@@ -55,6 +55,18 @@ SEND_TOOLS = frozenset({
     "forward_email",
     "send_draft",
 })
+# Verktyg som flyttar, raderar, byter namn på eller ersätter något: alla med
+# destructiveHint utom skicken, som PROTONMAIL_SEND_MODE styr. Vägras med
+# PROTONMAIL_ALLOW_DESTRUCTIVE=false (tests/unit/test_llm_skick_destruktivt.py
+# kräver att listan stämmer med verktygens klassning).
+DESTRUCTIVE_TOOLS = frozenset({
+    "move_email",
+    "delete_email",
+    "delete_folder",
+    "rename_folder",
+    "remove_label",
+    "update_draft",
+})
 
 
 def _read_only(settings: Any) -> bool:
@@ -108,6 +120,23 @@ def require_draft(settings: Any, action: str) -> None:
         )
 
 
+def _allow_destructive(settings: Any) -> bool:
+    # "is False": en attrapp (MagicMock) som settings ska inte räknas som avstängd
+    return getattr(settings, "allow_destructive", True) is not False
+
+
+def _refuse_destructive(settings: Any, action: str) -> None:
+    """ValueError med PROTONMAIL_ALLOW_DESTRUCTIVE=false (skrivskyddet kontrolleras separat)."""
+    if not _allow_destructive(settings):
+        raise ValueError(
+            f"Servern får inte flytta, radera, byta namn på eller ersätta något i kontot "
+            f"(PROTONMAIL_ALLOW_DESTRUCTIVE=false), så {action} vägras. Inget har ändrats. "
+            f"Läsa, markera, stjärnmärka, lägga till etiketter och skapa nya utkast "
+            f"(create_draft, create_reply_draft, create_forward_draft) går bra; be "
+            f"användaren göra ändringen själv i Proton."
+        )
+
+
 def check_tool(settings: Any, tool: str) -> None:
     """Vägra ett verktyg efter namn, innan det körs (anropas av MCP-servern)."""
     if tool in SEND_TOOLS:
@@ -116,6 +145,8 @@ def check_tool(settings: Any, tool: str) -> None:
         require_draft(settings, tool)
     elif tool in WRITE_TOOLS:
         require_write(settings, tool)
+    if tool in DESTRUCTIVE_TOOLS:
+        _refuse_destructive(settings, tool)
 
 
 def _is_allowed(address: str, rules: tuple[tuple[str, str], ...]) -> bool:
@@ -244,7 +275,9 @@ def _result_fields(value: Any) -> tuple[str, dict[str, Any]]:
     return "ok", {}
 
 
-def write_operation(action: str, *, draft: bool = False, mailbox: str | None = None):
+def write_operation(
+    action: str, *, draft: bool = False, destructive: bool = False, mailbox: str | None = None
+):
     """Dekorator för IMAP-funktioner som skriver i kontot.
 
     Den dekorerade funktionens första argument är IMAPClient (``self`` eller
@@ -252,11 +285,19 @@ def write_operation(action: str, *, draft: bool = False, mailbox: str | None = N
     funktionen körs, alltså innan något valideras eller skickas till Bridge.
     Varje anrop, även ett vägrat, ger en rad i granskningsloggen (audit.py)
     med åtgärd, mapp, UID:n och resultat — aldrig meddelandeinnehåll.
+    ``draft=True`` för utkast (skickläget gäller), ``destructive=True`` för
+    det som flyttar, raderar, byter namn på eller ersätter något
+    (PROTONMAIL_ALLOW_DESTRUCTIVE gäller).
     ``mailbox`` anger mappen för funktioner som inte tar den som argument.
     Lägg dekoratorn närmast funktionen (under ``_serialized``), så att även
     anrop via ``__wrapped__`` (utan lås) kontrolleras.
     """
-    check = require_draft if draft else require_write
+    base = require_draft if draft else require_write
+
+    def check(settings: Any, action: str) -> None:
+        base(settings, action)
+        if destructive:
+            _refuse_destructive(settings, action)
 
     def decorate(func):
         signature = inspect.signature(func)

@@ -119,7 +119,7 @@ _RETRY_WARNING = "Kör inte update_draft igen — då blir det ett utkast till."
 
 
 @_serialized
-@policy.write_operation("replace_draft", draft=True, mailbox=DRAFTS)
+@policy.write_operation("replace_draft", draft=True, destructive=True, mailbox=DRAFTS)
 async def replace_draft(
     imap: IMAPClient, old_uid: str, message: bytes, message_id: str | None
 ) -> str | None:

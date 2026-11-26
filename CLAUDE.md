@@ -35,7 +35,7 @@ startar `MailWatcher` (egna IDLE-anslutningar). Loggning går bara till stderr �
 | `http_server.py` | HTTP-läget (`protonmail-mcp --http`): Streamable HTTP på `/mcp` bakom API-nyckeln (`ApiKeyProtected`), Host-kontroll mot `PROTONMAIL_HTTP_ALLOWED_HOSTS`, start med uvicorn |
 | `server.py` | Serverinstansen `mcp` (`_GuardedMCPServer` vägrar verktyg efter policy innan de körs), `INSTRUCTIONS` till modellen, `lifespan`, `register_tools()`, `main()` och lyssnaren som gör nya mejl till resursnotiser |
 | `config.py` | `Settings` (pydantic-settings, prefix `PROTONMAIL_`), tolkning av `ALLOWED_RECIPIENTS` (IDNA2008) och `WATCH_MAILBOXES` |
-| `policy.py` | Skrivskydd, skickläge, mottagarlista, mottagar- och timgräns; `write_operation`-dekoratorn och verktygslistorna `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS` |
+| `policy.py` | Skrivskydd, skickläge, spärr mot destruktiva ändringar, mottagarlista, mottagar- och timgräns; `write_operation`-dekoratorn och verktygslistorna `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS`/`DESTRUCTIVE_TOOLS` |
 | `audit.py` | Granskningslogg: en JSON-rad per skick och skrivande IMAP-operation, maskerad på stderr, fullständig i `PROTONMAIL_AUDIT_LOG` |
 | `imap_client.py` | `IMAPClient`: den delade anslutningen med lås (`_serialized`), `_BridgeProtocol`, validering och kvotering, läsning, sökning, flaggor, flytt, radering, mappar |
 | `imap_bulk.py` | Massoperationer (1–100 UID:n i en mapp): flaggor, flytt, radering med svar per UID (`ok`/`failed`) |
@@ -92,10 +92,13 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
 - **Inga nya metoder i `IMAPClient` för nya funktioner.** Skriv dem som modulnivåfunktioner i en egen modul
   (`imap_drafts.py`, `imap_labels.py` …) med `IMAPClient` som första argument, dekorerade med `_serialized`.
 - **Skrivande IMAP-funktioner dekoreras med `policy.write_operation(action)`** (närmast funktionen, under
-  `_serialized`; `draft=True` för utkast). Den kontrollerar `READ_ONLY`/`SEND_MODE` innan något valideras eller
+  `_serialized`; `draft=True` för utkast, `destructive=True` för det som flyttar, raderar, byter namn på eller
+  ersätter något). Den kontrollerar `READ_ONLY`/`SEND_MODE`/`ALLOW_DESTRUCTIVE` innan något valideras eller
   skickas och skriver granskningsraden, även för vägrade anrop. Nya skrivande verktyg läggs dessutom i rätt lista i
   `policy.py` så att servern vägrar dem redan före körning; `tests/unit/test_llm_skick_skrivskydd.py` kräver att
-  varje registrerat verktyg är klassat.
+  varje registrerat verktyg är klassat, och `tests/unit/test_llm_skick_destruktivt.py` att `DESTRUCTIVE_TOOLS` är
+  exakt verktygen med `destructive=True` utom skicken. `remove_sent_draft` (efter `send_draft`) är inte destruktiv:
+  det skickade utkastet finns i Sent, och skickläget styr skicket.
 - **En enda skickväg.** Allt SMTP går genom `SMTPClient._deliver` (via `send_email` eller
   `send_prepared_message`), som kontrollerar skickpolicy, mottagarlista, mottagargräns och timgräns före
   `_smtp_send`. Anropa aldrig aiosmtplib någon annanstans.
