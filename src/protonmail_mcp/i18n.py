@@ -7,8 +7,9 @@ Med PROTONMAIL_LANGUAGE=en byts de texterna mot katalogen i i18n_en.py när
 servern listar dem (server._GuardedMCPServer). Verktygen registreras som
 förut på svenska; namnen (move_email, sammanfatta_olasta …) ändras aldrig.
 
-Inte översatt än: felmeddelanden, serverinstruktionerna (INSTRUCTIONS),
-promptarnas text och svaren från verktygen.
+Fasta texter till modellen (serverinstruktionerna, promptarnas text) går
+genom t(): den svenska mallen är källan och nyckeln (dess hashvärde) i
+i18n_en.TEXTS. Inte översatt än: felmeddelanden och svaren från verktygen.
 
 Fail-closed: en post vars hashvärde inte stämmer med den svenska texten
 används inte, så att klienten aldrig får en engelsk beskrivning av ett
@@ -24,6 +25,34 @@ from . import i18n_en
 
 LANGUAGES = ("sv", "en")
 DEFAULT_LANGUAGE = "sv"
+
+
+def current_language() -> str:
+    """PROTONMAIL_LANGUAGE. Utan giltiga inställningar (t.ex. inget användarnamn)
+    gäller standardspråket; lifespan rapporterar själva felet."""
+    from pydantic import ValidationError
+
+    from . import config
+
+    try:
+        language = getattr(config.get_settings(), "language", DEFAULT_LANGUAGE)
+    except ValidationError:
+        return DEFAULT_LANGUAGE
+    return language if language in LANGUAGES else DEFAULT_LANGUAGE
+
+
+def t(template: str, /, **values: Any) -> str:
+    """En fast text på det inställda språket, med värdena insatta (str.format).
+
+    template är den svenska mallen. Den engelska hämtas ur i18n_en.TEXTS med
+    mallens hashvärde; saknas den (ny eller ändrad svensk text) används den
+    svenska. Utan värden formateras inget, så klamrar i texten står kvar.
+    Värdena sätts in som de är och tolkas aldrig som mall.
+    """
+    text = template
+    if current_language() == "en":
+        text = i18n_en.TEXTS.get(sv_hash(template), template)
+    return text.format(**values) if values else text
 
 
 def sv_hash(*parts: str | None) -> str:
