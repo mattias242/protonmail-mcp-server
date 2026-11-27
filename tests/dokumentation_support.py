@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from pydantic_core import PydanticUndefined
 
@@ -95,11 +96,19 @@ def effect(annotations: Any) -> str:
 
 
 async def registered_tools() -> dict[str, str]:
-    """Verktygsnamn → effekt för det servern registrerar."""
-    from protonmail_mcp import server
+    """Tool name → effect for what the server registers.
+
+    With the default settings: tools/list leaves out tools that the settings
+    switch off (policy.hidden_tools), and README must list everything the
+    server has. From pull request #6 by Mitch Lindgren.
+    """
+    from protonmail_mcp import config, server
 
     server.register_tools()
-    return {t.name: effect(t.annotations) for t in await server.mcp.list_tools()}
+    settings = config.Settings(username="u", password="p", _env_file=None)
+    with patch.object(config, "get_settings", return_value=settings):
+        tools = await server.mcp.list_tools()
+    return {t.name: effect(t.annotations) for t in tools}
 
 
 async def registered_resources() -> set[str]:

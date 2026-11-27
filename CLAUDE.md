@@ -47,7 +47,7 @@ to stderr only — stdout is the MCP protocol.
 | `http_server.py` | HTTP mode (`protonmail-mcp --http`): Streamable HTTP on `/mcp` behind the API key (`ApiKeyProtected`), Host check against `PROTONMAIL_HTTP_ALLOWED_HOSTS`, start with uvicorn |
 | `server.py` | The server instance `mcp` (`_GuardedMCPServer` refuses tools by policy before they run and translates what it lists), `INSTRUCTIONS` for the model, `apply_language`, `lifespan`, `register_tools()`, `main()` and the listener that turns new mail into resource notifications |
 | `config.py` | `Settings` (pydantic-settings, prefix `PROTONMAIL_`), parsing of `ALLOWED_RECIPIENTS` (IDNA2008) and `WATCH_MAILBOXES` |
-| `policy.py` | Read-only, send mode, the guard against destructive changes, recipient list, recipient and hourly limits; the `write_operation` decorator and the tool lists `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS`/`DESTRUCTIVE_TOOLS` |
+| `policy.py` | Read-only, send mode, the guard against destructive changes, recipient list, recipient and hourly limits; the `write_operation` decorator, the tool lists `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS`/`DESTRUCTIVE_TOOLS` and `hidden_tools` (what `tools/list` leaves out) |
 | `i18n.py` | `PROTONMAIL_LANGUAGE`: translates titles and descriptions when the server lists tools, prompts and resources, and fixed texts and error messages with `t()` (`sv_hash`, `current_language`, fail-closed to Swedish) |
 | `i18n_en.py` | The English catalogue: `TOOLS`, `PROMPTS`, `RESOURCES`, `TEMPLATES` (with the hash of the Swedish text), `FIELDS` and `TEXTS` (templates for `i18n.t`, keyed by the hash of the Swedish template) |
 | `audit.py` | Audit log: one JSON line per send and per writing IMAP operation, masked on stderr, complete in `PROTONMAIL_AUDIT_LOG` |
@@ -111,7 +111,9 @@ the code has. If you add something, update the tables in the same commit.
   also for refused calls. New writing tools also go in the right list in `policy.py` so that the server refuses them
   before they run; `tests/unit/test_llm_skick_skrivskydd.py` requires every registered tool to be classified, and
   `tests/unit/test_llm_skick_destruktivt.py` that `DESTRUCTIVE_TOOLS` is exactly the tools with `destructive=True`
-  except the send tools. `remove_sent_draft` (after `send_draft`) is not destructive: the sent draft is in Sent, and the
+  except the send tools. With `ALLOW_DESTRUCTIVE=false` those tools are also left out of `tools/list`
+  (`policy.hidden_tools`, fail-closed when the settings cannot be read); tests that list tools through the server
+  therefore need test settings (`use_test_settings`). `remove_sent_draft` (after `send_draft`) is not destructive: the sent draft is in Sent, and the
   send mode governs the send.
 - **A single send path.** All SMTP goes through `SMTPClient._deliver` (via `send_email` or `send_prepared_message`),
   which checks the send policy, the recipient list, the recipient limit and the hourly limit before `_smtp_send`. Never
@@ -261,6 +263,10 @@ the code has. If you add something, update the tables in the same commit.
 
 ## Way of working
 
+- **Check open pull requests before planning a feature or a fix.** List the open PRs (including drafts and those
+  from forks) and read any that touch the same issue or code. If someone has already done the work, review it, ask
+  for changes or build on it — never implement it again in parallel. When a contribution is superseded anyway, say so
+  honestly, credit it, and port the parts that are still missing with the contributor as the commit author.
 - **Trunk-based.** Small commits straight to `main`; commit and push after every green change. No long-lived branches —
   if something is half done, hide it behind a setting.
 - **Conventional Commits in English**, e.g. `fix(imap): check the SELECT response`, `feat(drafts): …`,

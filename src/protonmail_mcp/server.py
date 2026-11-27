@@ -134,9 +134,25 @@ class _GuardedMCPServer(MCPServer):
     # beskrivningar byts när de listas; verktygen registreras på svenska.
 
     async def list_tools(self):
-        from . import i18n
+        """The registered tools, without those the settings switch off, in the set language.
 
-        return i18n.translate_tools(await super().list_tools(), _language())
+        Tools that policy.hidden_tools switches off (PROTONMAIL_ALLOW_DESTRUCTIVE=false)
+        are left out, so that the model never sees them; called by name anyway they are
+        refused as usual. If the settings cannot be read (cannot happen after lifespan
+        has started) they are hidden rather than shown. From pull request #6 by Mitch
+        Lindgren.
+        """
+        from . import config, i18n, policy
+
+        try:
+            settings = config.get_settings()
+        except Exception as exc:  # noqa: BLE001 — fail-closed: hide rather than show
+            logger.warning("Could not read the settings for tools/list, hiding the destructive tools: %s", exc)
+            settings = None
+        hidden = policy.hidden_tools(settings)
+        tools = [tool for tool in await super().list_tools() if tool.name not in hidden]
+        language = _language() if settings is not None else i18n.DEFAULT_LANGUAGE
+        return i18n.translate_tools(tools, language)
 
     async def list_prompts(self):
         from . import i18n
