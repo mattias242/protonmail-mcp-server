@@ -154,6 +154,18 @@ def _refuse_destructive(settings: Any, action: str) -> None:
         )
 
 
+def hidden_tools(settings: Any) -> frozenset[str]:
+    """The tools left out of tools/list for the model with these settings.
+
+    They are also refused by name (check_tool) if a client calls them anyway.
+    ``None`` (the settings could not be read) hides them — fail-closed.
+    From pull request #6 by Mitch Lindgren.
+    """
+    if settings is None or not _allow_destructive(settings):
+        return DESTRUCTIVE_TOOLS
+    return frozenset()
+
+
 def check_tool(settings: Any, tool: str) -> None:
     """Vägra ett verktyg efter namn, innan det körs (anropas av MCP-servern)."""
     if tool in SEND_TOOLS:
