@@ -8,6 +8,7 @@ from email.headerregistry import Address
 from email.message import EmailMessage, Message
 from email.utils import parseaddr, parsedate_to_datetime
 
+from .. import i18n
 from .._sdk import Context
 
 from .. import imap_labels
@@ -90,7 +91,7 @@ def _parse_original(raw: bytes) -> EmailMessage:
         _check_header_sizes(email.message_from_bytes(raw, policy=email.policy.compat32))
         return email.message_from_bytes(raw, policy=email.policy.default)
     except RecursionError:  # parsern är rekursiv för nästlade multipart
-        raise ValueError("Originalet är orimligt djupt nästlat") from None
+        raise ValueError(i18n.t('Originalet är orimligt djupt nästlat')) from None
 
 
 def _check_header_sizes(msg: Message) -> None:
@@ -104,11 +105,17 @@ def _check_header_sizes(msg: Message) -> None:
         parts += 1
         if parts > _MAX_MIME_PARTS:
             raise ValueError(
-                f"Originalet har orimligt många MIME-delar (över {_MAX_MIME_PARTS})"
+                i18n.t(
+                    'Originalet har orimligt många MIME-delar (över {MAX_MIME_PARTS})',
+                    MAX_MIME_PARTS=_MAX_MIME_PARTS,
+                )
             )
         if depth > _MAX_MIME_DEPTH:
             raise ValueError(
-                f"Originalet är orimligt djupt nästlat (över {_MAX_MIME_DEPTH} nivåer)"
+                i18n.t(
+                    'Originalet är orimligt djupt nästlat (över {MAX_MIME_DEPTH} nivåer)',
+                    MAX_MIME_DEPTH=_MAX_MIME_DEPTH,
+                )
             )
         for name, value in part.raw_items():
             size = len(str(value))
@@ -116,13 +123,20 @@ def _check_header_sizes(msg: Message) -> None:
             is_mime = name.lower() in _MIME_HEADERS
             if is_mime and size > _MAX_MIME_HEADER_CHARS:
                 raise ValueError(
-                    f"Originalet har en orimligt stor {name}-header ({size} tecken)"
+                    i18n.t(
+                        'Originalet har en orimligt stor {name}-header ({size} tecken)',
+                        name=name,
+                        size=size,
+                    )
                 )
             if is_mime or depth > 0:
                 cost += size * size
         if total > _MAX_TOTAL_HEADER_CHARS or cost > _MAX_HEADER_COST:
             raise ValueError(
-                f"Originalets headers är orimligt stora ({total} tecken totalt)"
+                i18n.t(
+                    'Originalets headers är orimligt stora ({total} tecken totalt)',
+                    total=total,
+                )
             )
         # get_payload() i stället för iter_parts(): det senare parsar Content-Type
         payload = part.get_payload() if part.is_multipart() else None
@@ -156,7 +170,11 @@ def _raw_values(msg: EmailMessage, name: str, limit: int | None = _MAX_HEADER_CH
     total = sum(len(v) for v in values)
     if limit is not None and total > limit:
         raise ValueError(
-            f"Originalets {name}-header är orimligt stor ({total} tecken)"
+            i18n.t(
+                'Originalets {name}-header är orimligt stor ({total} tecken)',
+                name=name,
+                total=total,
+            )
         )
     return [_decode_8bit(v) for v in values]
 
@@ -353,8 +371,10 @@ def _reply_recipients(
         to_list = [_format_address(display, addr) if display else addr]
     if not to_list:
         raise ValueError(
-            "Hittar ingen mottagare att svara till: originalet har inga andra "
-            "adresser än ditt eget konto"
+            i18n.t(
+                'Hittar ingen mottagare att svara till: originalet har inga andra adresser än ditt '
+                'eget konto',
+            )
         )
     return to_list, cc_list
 

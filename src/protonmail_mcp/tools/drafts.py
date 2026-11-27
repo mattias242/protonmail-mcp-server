@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from email.message import EmailMessage, Message
 from typing import Any, Literal
 
+from .. import i18n
 from .._sdk import Context
 
 from .. import imap_drafts
@@ -361,7 +362,11 @@ async def update_draft(
             Kör då INTE update_draft igen (det skapar ett utkast till).
     """
     if mailbox != DRAFTS:
-        raise ValueError(f"Bara utkast i {DRAFTS} kan uppdateras, inte i {mailbox!r}")
+        raise ValueError(i18n.t(
+                'Bara utkast i {DRAFTS} kan uppdateras, inte i {mailbox!r}',
+                DRAFTS=DRAFTS,
+                mailbox=mailbox,
+            ))
     app = _get_app(ctx)
     old_raw = await app.imap.get_message(DRAFTS, uid)
     if old_raw is None:
@@ -431,13 +436,21 @@ async def send_draft(
         SMTPPartialDeliveryError: servern vägrade några av mottagarna.
     """
     if mailbox != DRAFTS:
-        raise ValueError(f"Bara utkast i {DRAFTS} kan skickas, inte i {mailbox!r}")
+        raise ValueError(i18n.t(
+                'Bara utkast i {DRAFTS} kan skickas, inte i {mailbox!r}',
+                DRAFTS=DRAFTS,
+                mailbox=mailbox,
+            ))
     app = _get_app(ctx)
     raw = await app.imap.get_message(DRAFTS, uid)
     if raw is None:
         raise ValueError(
-            f"Inget utkast med UID {uid} i {DRAFTS}. "
-            'Hitta utkasten med list_emails(mailbox="Drafts").'
+            i18n.t(
+                'Inget utkast med UID {uid} i {DRAFTS}. Hitta utkasten med '
+                'list_emails(mailbox="Drafts").',
+                uid=uid,
+                DRAFTS=DRAFTS,
+            )
         )
     msg = email.message_from_bytes(raw, policy=email.policy.SMTP)
     # Samma tolkning som get_email visar och som send_prepared_message skickar

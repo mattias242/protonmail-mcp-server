@@ -9,7 +9,9 @@ förut på svenska; namnen (move_email, sammanfatta_olasta …) ändras aldrig.
 
 Fasta texter till modellen (serverinstruktionerna, promptarnas text) går
 genom t(): den svenska mallen är källan och nyckeln (dess hashvärde) i
-i18n_en.TEXTS. Inte översatt än: felmeddelanden och svaren från verktygen.
+i18n_en.TEXTS. Felmeddelandena byggs likadant (raise ValueError(i18n.t(...))).
+Inte översatt än: svaren från verktygen (note, warning) och felen i
+config.py, som körs innan språket kan läsas.
 
 Fail-closed: en post vars hashvärde inte stämmer med den svenska texten
 används inte, så att klienten aldrig får en engelsk beskrivning av ett

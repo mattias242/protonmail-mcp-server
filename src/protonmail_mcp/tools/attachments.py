@@ -2,6 +2,7 @@ import base64
 import hashlib
 from typing import Annotated
 
+from .. import i18n
 from .._sdk import Context
 from pydantic import Field
 
@@ -93,8 +94,12 @@ async def get_attachment(
 
     if len(data) > store.max_inline_bytes:
         raise ValueError(
-            f"Bilagan är {len(data)} byte, över gränsen {store.max_inline_bytes} byte för "
-            "save=False — använd save=True för att spara den i bilagekatalogen"
+            i18n.t(
+                'Bilagan är {len} byte, över gränsen {max_inline_bytes} byte för save=False — använd '
+                'save=True för att spara den i bilagekatalogen',
+                len=len(data),
+                max_inline_bytes=store.max_inline_bytes,
+            )
         )
     result["untrusted_content_notice"] = UNTRUSTED_CONTENT_NOTICE
     if found["content_type"].startswith("text/"):

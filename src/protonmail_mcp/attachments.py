@@ -36,6 +36,7 @@ import stat
 import sys
 import time
 import unicodedata
+from . import i18n
 from collections.abc import Sequence
 from email.message import EmailMessage
 from pathlib import Path
@@ -259,20 +260,32 @@ class AttachmentStore:
         skriva i. Används både på lstat (före) och fstat (efter öppning)."""
         if stat.S_ISLNK(st.st_mode):
             raise ValueError(
-                f"Bilagekatalogen {self.root} är en symlänk och används inte (en "
-                "uppackad zip i Downloads kan lägga dit en sådan). Ta bort länken, "
-                "eller sätt PROTONMAIL_ATTACHMENT_DIR till en riktig katalog."
+                i18n.t(
+                    'Bilagekatalogen {root} är en symlänk och används inte (en uppackad zip i Downloads '
+                    'kan lägga dit en sådan). Ta bort länken, eller sätt PROTONMAIL_ATTACHMENT_DIR till en '
+                    'riktig katalog.',
+                    root=self.root,
+                )
             )
         if not stat.S_ISDIR(st.st_mode):
-            raise ValueError(f"Bilagekatalogen {self.root} är ingen katalog")
+            raise ValueError(i18n.t(
+                    'Bilagekatalogen {root} är ingen katalog',
+                    root=self.root,
+                ))
         uid = _current_uid()
         if uid is not None and st.st_uid != uid:
-            raise ValueError(f"Bilagekatalogen {self.root} ägs inte av dig och används inte")
+            raise ValueError(i18n.t(
+                    'Bilagekatalogen {root} ägs inte av dig och används inte',
+                    root=self.root,
+                ))
         if st.st_mode & 0o022:
             raise ValueError(
-                f"Bilagekatalogen {self.root} är skrivbar för andra "
-                f"(rättigheter {stat.S_IMODE(st.st_mode):o}) och används inte. "
-                f"Kör: chmod 700 {self.root}"
+                i18n.t(
+                    'Bilagekatalogen {root} är skrivbar för andra (rättigheter {S_IMODE:o}) och används '
+                    'inte. Kör: chmod 700 {root}',
+                    root=self.root,
+                    S_IMODE=stat.S_IMODE(st.st_mode),
+                )
             )
 
     def _checked_root(self, create: bool = False) -> Path:
@@ -287,8 +300,11 @@ class AttachmentStore:
         root = self.root
         if not root.is_absolute():
             raise ValueError(
-                f"Bilagekatalogen {root} är en relativ sökväg — ange en absolut "
-                "sökväg i PROTONMAIL_ATTACHMENT_DIR"
+                i18n.t(
+                    'Bilagekatalogen {root} är en relativ sökväg — ange en absolut sökväg i '
+                    'PROTONMAIL_ATTACHMENT_DIR',
+                    root=root,
+                )
             )
         for parent in reversed(root.parents):  # "/" först
             try:
@@ -297,21 +313,31 @@ class AttachmentStore:
                 break  # resten saknas och skapas nedan (eller ger "finns inte")
             except OSError as exc:
                 raise ValueError(
-                    f"Bilagekatalogen {root} kan inte kontrolleras: {exc.strerror or exc}"
+                    i18n.t(
+                        'Bilagekatalogen {root} kan inte kontrolleras: {v}',
+                        root=root,
+                        v=exc.strerror or exc,
+                    )
                 ) from None
             if stat.S_ISLNK(st.st_mode) and not _is_system_symlink(parent, st):
                 raise ValueError(
-                    f"Bilagekatalogen {root} ligger under symlänken {parent} och "
-                    "används inte. Sätt PROTONMAIL_ATTACHMENT_DIR till den riktiga "
-                    "sökvägen."
+                    i18n.t(
+                        'Bilagekatalogen {root} ligger under symlänken {parent} och används inte. Sätt '
+                        'PROTONMAIL_ATTACHMENT_DIR till den riktiga sökvägen.',
+                        root=root,
+                        parent=parent,
+                    )
                 )
         try:
             st = os.lstat(root)
         except FileNotFoundError:
             if not create:
                 raise ValueError(
-                    f"Bilagekatalogen {root} finns inte. Lägg filerna som ska "
-                    "skickas där (PROTONMAIL_ATTACHMENT_DIR)."
+                    i18n.t(
+                        'Bilagekatalogen {root} finns inte. Lägg filerna som ska skickas där '
+                        '(PROTONMAIL_ATTACHMENT_DIR).',
+                        root=root,
+                    )
                 ) from None
             try:
                 root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -320,11 +346,19 @@ class AttachmentStore:
                 st = os.lstat(root)
             except OSError as exc:  # t.ex. saknad behörighet eller en fil i vägen
                 raise ValueError(
-                    f"Bilagekatalogen {root} kan inte skapas: {exc.strerror or exc}"
+                    i18n.t(
+                        'Bilagekatalogen {root} kan inte skapas: {v}',
+                        root=root,
+                        v=exc.strerror or exc,
+                    )
                 ) from None
         except OSError as exc:
             raise ValueError(
-                f"Bilagekatalogen {root} kan inte kontrolleras: {exc.strerror or exc}"
+                i18n.t(
+                    'Bilagekatalogen {root} kan inte kontrolleras: {v}',
+                    root=root,
+                    v=exc.strerror or exc,
+                )
             ) from None
         self._check_root_stat(st)
         return root.resolve()
@@ -337,8 +371,11 @@ class AttachmentStore:
             fd = os.open(resolved, os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW | _O_CLOEXEC)
         except OSError as exc:
             raise ValueError(
-                f"Bilagekatalogen {self.root} ändrades medan den kontrollerades "
-                f"({exc.strerror or exc}) — försök igen"
+                i18n.t(
+                    'Bilagekatalogen {root} ändrades medan den kontrollerades ({v}) — försök igen',
+                    root=self.root,
+                    v=exc.strerror or exc,
+                )
             ) from None
         try:
             self._check_root_stat(os.fstat(fd))
@@ -363,7 +400,7 @@ class AttachmentStore:
                 name = base if n == 0 else _numbered(base, n)
                 path = root / name
                 if path.parent != root:  # kan inte hända efter saneringen, men ändå
-                    raise ValueError("Ogiltigt filnamn för bilagan")
+                    raise ValueError(i18n.t('Ogiltigt filnamn för bilagan'))
                 try:
                     fd = os.open(name, flags, 0o600, dir_fd=dir_fd)
                 except FileExistsError:
@@ -375,7 +412,10 @@ class AttachmentStore:
         finally:
             os.close(dir_fd)
         raise ValueError(
-            f"För många filer som heter {base!r} i bilagekatalogen — städa bland dem"
+            i18n.t(
+                'För många filer som heter {base!r} i bilagekatalogen — städa bland dem',
+                base=base,
+            )
         )
 
     def resolve_existing(self, name: str) -> Path:
@@ -388,9 +428,12 @@ class AttachmentStore:
 
     def _checked_file(self, name: str) -> _CheckedFile:
         if not name or not name.strip():
-            raise ValueError("Tomt filnamn för bilaga")
+            raise ValueError(i18n.t('Tomt filnamn för bilaga'))
         if any(_is_unsafe_char(ch) for ch in name):
-            raise ValueError(f"Filnamnet {name!r} innehåller kontrolltecken")
+            raise ValueError(i18n.t(
+                    'Filnamnet {name!r} innehåller kontrolltecken',
+                    name=name,
+                ))
         root = self._checked_root()
         candidate = Path(name)
         if not candidate.is_absolute():
@@ -399,20 +442,38 @@ class AttachmentStore:
             resolved = candidate.resolve(strict=True)
             st = os.lstat(resolved)
         except (FileNotFoundError, NotADirectoryError):
-            raise ValueError(f"Filen {name!r} finns inte i bilagekatalogen {root}") from None
+            raise ValueError(i18n.t(
+                    'Filen {name!r} finns inte i bilagekatalogen {root}',
+                    name=name,
+                    root=root,
+                )) from None
         except (RuntimeError, OSError) as exc:  # symlänkloop m.m.
-            raise ValueError(f"Filen {name!r} kan inte läsas: {exc.strerror or exc}") from None
+            raise ValueError(i18n.t(
+                    'Filen {name!r} kan inte läsas: {v}',
+                    name=name,
+                    v=exc.strerror or exc,
+                )) from None
         if resolved == root or root not in resolved.parents:
             raise ValueError(
-                f"{name!r} ligger utanför bilagekatalogen {root}. Bara filer i "
-                "bilagekatalogen (PROTONMAIL_ATTACHMENT_DIR) kan skickas."
+                i18n.t(
+                    '{name!r} ligger utanför bilagekatalogen {root}. Bara filer i bilagekatalogen '
+                    '(PROTONMAIL_ATTACHMENT_DIR) kan skickas.',
+                    name=name,
+                    root=root,
+                )
             )
         if not stat.S_ISREG(st.st_mode):
-            raise ValueError(f"{name!r} är inte en vanlig fil")
+            raise ValueError(i18n.t(
+                    '{name!r} är inte en vanlig fil',
+                    name=name,
+                ))
         if st.st_nlink > 1:
             raise ValueError(
-                f"{name!r} har flera hårda länkar och kan vara en fil utanför "
-                "bilagekatalogen — kopiera filen dit i stället"
+                i18n.t(
+                    '{name!r} har flera hårda länkar och kan vara en fil utanför bilagekatalogen — kopiera '
+                    'filen dit i stället',
+                    name=name,
+                )
             )
         return _CheckedFile(resolved, st, resolved.relative_to(root))
 
@@ -510,7 +571,11 @@ def load_for_sending(
     if not names:
         return []
     if len(names) > MAX_SEND_FILES:
-        raise ValueError(f"För många bilagor ({len(names)}) — högst {MAX_SEND_FILES} per mejl")
+        raise ValueError(i18n.t(
+                'För många bilagor ({len}) — högst {MAX_SEND_FILES} per mejl',
+                len=len(names),
+                MAX_SEND_FILES=MAX_SEND_FILES,
+            ))
     store = store or get_store()
     checked = [store._checked_file(name) for name in names]
     for name, item in zip(names, checked):
@@ -520,8 +585,11 @@ def load_for_sending(
     total = sum(item.stat.st_size for item in checked)
     if total > MAX_SEND_BYTES:
         raise ValueError(
-            f"Bilagorna är tillsammans {total} byte — högst {MAX_SEND_BYTES} byte "
-            "(25 MB) per mejl"
+            i18n.t(
+                'Bilagorna är tillsammans {total} byte — högst {MAX_SEND_BYTES} byte (25 MB) per mejl',
+                total=total,
+                MAX_SEND_BYTES=MAX_SEND_BYTES,
+            )
         )
     parts: list[EmailMessage] = []
     remaining = MAX_SEND_BYTES
@@ -529,9 +597,12 @@ def load_for_sending(
         data = _read_checked(name, item, remaining + 1)  # filen kan ha vuxit
         remaining -= len(data)
         if remaining < 0:
-            raise ValueError(f"Bilagorna är tillsammans över {MAX_SEND_BYTES} byte (25 MB)")
+            raise ValueError(i18n.t(
+                    'Bilagorna är tillsammans över {MAX_SEND_BYTES} byte (25 MB)',
+                    MAX_SEND_BYTES=MAX_SEND_BYTES,
+                ))
         if _PRIVATE_KEY_RE.search(data):
-            raise _refuse_secret(name, "innehållet är en privat nyckel")
+            raise _refuse_secret(name, i18n.t('innehållet är en privat nyckel'))
         maintype, subtype = _guess_type(item.path.name)
         part = EmailMessage(policy=email.policy.SMTP)
         part.set_content(

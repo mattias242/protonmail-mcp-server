@@ -10,6 +10,7 @@ from datetime import timezone
 from email.message import Message
 from typing import Any
 
+from . import i18n
 from .html_text import HtmlText, html_to_text, html_to_text_report
 from .sanitize import (
     UNTRUSTED_CONTENT_NOTICE,
@@ -412,10 +413,15 @@ def get_attachment_part(raw: bytes, index: int) -> dict[str, Any]:
     found = out["attachments"]
     if not 0 <= index < len(found):
         if not found:
-            raise ValueError("Mejlet har inga bilagor")
+            raise ValueError(i18n.t('Mejlet har inga bilagor'))
         count = f"{len(found)} bilaga" if len(found) == 1 else f"{len(found)} bilagor"
         raise ValueError(
-            f"Ingen bilaga med index {index} — mejlet har {count} (index 0–{len(found) - 1})"
+            i18n.t(
+                'Ingen bilaga med index {index} — mejlet har {count} (index 0–{v})',
+                index=index,
+                count=count,
+                v=len(found) - 1,
+            )
         )
     part, filename, section = found[index]
     data = _attachment_bytes(part)
@@ -730,10 +736,17 @@ def parse_email(
 ) -> dict[str, Any]:
     if body_format not in _BODY_FORMATS:
         raise ValueError(
-            f"Okänt body_format {body_format!r} — giltiga värden: {', '.join(_BODY_FORMATS)}"
+            i18n.t(
+                'Okänt body_format {body_format!r} — giltiga värden: {join}',
+                body_format=body_format,
+                join=', '.join(_BODY_FORMATS),
+            )
         )
     if max_length is not None and max_length < 0:
-        raise ValueError(f"max_length måste vara 0 eller större (eller None), fick {max_length}")
+        raise ValueError(i18n.t(
+                'max_length måste vara 0 eller större (eller None), fick {max_length}',
+                max_length=max_length,
+            ))
     msg = email.message_from_bytes(raw)
     parts = _parts(msg)
     clean = FieldCleaner()

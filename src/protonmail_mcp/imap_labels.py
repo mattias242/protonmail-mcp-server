@@ -14,6 +14,7 @@ import re
 from email.parser import HeaderParser
 from typing import Any
 
+from . import i18n
 from . import policy
 from .imap_bulk import (
     _FLAGS_RE,
@@ -84,23 +85,31 @@ def label_mailbox(label: str) -> str:
     bare = key[len(LABEL_PREFIX):] if key.startswith(LABEL_PREFIX.casefold()) else key
     if bare == "starred":
         raise ValueError(
-            "Starred är Protons stjärnmärkning, inte en etikett. "
-            "Använd flag_email för att stjärnmärka och unflag_email för att ta bort stjärnan."
+            i18n.t(
+                'Starred är Protons stjärnmärkning, inte en etikett. Använd flag_email för att '
+                'stjärnmärka och unflag_email för att ta bort stjärnan.',
+            )
         )
     if key.startswith("folders/"):
         raise ValueError(
-            f"{label!r} är en mapp, inte en etikett. Ett mejl ligger i exakt en mapp — "
-            "använd move_email för att flytta det dit."
+            i18n.t(
+                '{label!r} är en mapp, inte en etikett. Ett mejl ligger i exakt en mapp — använd '
+                'move_email för att flytta det dit.',
+                label=label,
+            )
         )
     if bare in _NOT_LABELS and not key.startswith(LABEL_PREFIX.casefold()):
         raise ValueError(
-            f"{label!r} är en systemmapp, inte en etikett. Använd move_email för att flytta "
-            "mejl dit, eller ange en etikett (t.ex. \"Kvitton\" eller \"Labels/Kvitton\")."
+            i18n.t(
+                '{label!r} är en systemmapp, inte en etikett. Använd move_email för att flytta mejl '
+                'dit, eller ange en etikett (t.ex. "Kvitton" eller "Labels/Kvitton").',
+                label=label,
+            )
         )
     if not key.startswith(LABEL_PREFIX.casefold()):
         name = LABEL_PREFIX + name
     if name == LABEL_PREFIX:
-        raise ValueError("Etikettnamnet är tomt. Ange t.ex. \"Kvitton\" eller \"Labels/Kvitton\".")
+        raise ValueError(i18n.t('Etikettnamnet är tomt. Ange t.ex. "Kvitton" eller "Labels/Kvitton".'))
     _check_user_folder(name)
     _quote_mailbox(name)
     return name
@@ -124,12 +133,19 @@ async def _require_label(imap: IMAPClient, label: str) -> str:
         return variants[0]
     if variants:
         raise ValueError(
-            f"Etiketten {label} finns inte med exakt det namnet, men det finns flera med annan "
-            f"versal/gemen: {', '.join(variants)}. Ange vilken som avses med exakt namn."
+            i18n.t(
+                'Etiketten {label} finns inte med exakt det namnet, men det finns flera med annan '
+                'versal/gemen: {join}. Ange vilken som avses med exakt namn.',
+                label=label,
+                join=', '.join(variants),
+            )
         )
     raise ValueError(
-        f"Etiketten {label} finns inte. Skapa den först med create_folder(\"{label}\"); "
-        "list_mailboxes visar vilka etiketter som finns."
+        i18n.t(
+            'Etiketten {label} finns inte. Skapa den först med create_folder("{label}"); '
+            'list_mailboxes visar vilka etiketter som finns.',
+            label=label,
+        )
     )
 
 
@@ -217,7 +233,7 @@ def searchable(info: dict) -> bool:
 
 async def _fetch_identities_by_uid(imap: IMAPClient, mailbox: str, uids: list[str]) -> dict[str, dict]:
     resp = await imap._client.uid("fetch", uid_set(uids), _IDENTITY_ITEMS)
-    _require_ok(resp, f"Hämtningen av Message-ID i {mailbox}")
+    _require_ok(resp, i18n.t('Hämtningen av Message-ID i {mailbox}', mailbox=mailbox))
     return _parse_identities(resp.lines)
 
 
@@ -277,7 +293,7 @@ async def _find_in_label(
     for start in range(0, len(ordered), _FETCH_CHUNK_SIZE):
         chunk = ordered[start:start + _FETCH_CHUNK_SIZE]
         resp = await imap._client.fetch(",".join(chunk), _IDENTITY_ITEMS)
-        _require_ok(resp, f"Hämtningen av sökträffarna i {label}")
+        _require_ok(resp, i18n.t('Hämtningen av sökträffarna i {label}', label=label))
         candidates.update(_parse_identities(resp.lines))
 
     found: dict[str, str] = {}
@@ -311,7 +327,10 @@ async def has_internal_id(imap: IMAPClient, mailbox: str, internal_id: str) -> b
     ValueError om id:t är ogiltigt eller Bridge nekar.
     """
     if _usable_internal_id([internal_id]) is None:
-        raise ValueError(f"Ogiltigt X-Pm-Internal-Id: {internal_id!r}")
+        raise ValueError(i18n.t(
+                'Ogiltigt X-Pm-Internal-Id: {internal_id!r}',
+                internal_id=internal_id,
+            ))
     _quote_mailbox(mailbox)
     await imap._ensure_connected()
     await imap._select(mailbox)
@@ -357,8 +376,11 @@ async def add_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str)
     _quote_mailbox(mailbox)
     if _mailbox_key(mailbox) == _mailbox_key(target):
         raise ValueError(
-            f"Mejlen i {target} har redan etiketten {target}. Ange mappen där mejlet ligger "
-            "(t.ex. INBOX) som mailbox."
+            i18n.t(
+                'Mejlen i {target} har redan etiketten {target}. Ange mappen där mejlet ligger (t.ex. '
+                'INBOX) som mailbox.',
+                target=target,
+            )
         )
     await imap._ensure_connected()
     target = await _require_label(imap, target)
@@ -371,7 +393,7 @@ async def add_label(imap: IMAPClient, mailbox: str, uids: list[str], label: str)
             ok = found
         else:
             failed += fail_all(
-                found, f"Att lägga till etiketten {target} misslyckades ({resp.result}): {_response_text(resp)}"
+                found, i18n.t('Att lägga till etiketten {target} misslyckades ({result}): {response_text}', target=target, result=resp.result, response_text=_response_text(resp))
             )
     return result(uids, ok, failed)
 
@@ -432,7 +454,7 @@ async def remove_label(imap: IMAPClient, mailbox: str, uids: list[str], label: s
 async def _without_flag(imap: IMAPClient, uids: list[str]) -> list[str]:
     """De av uids i Starred (som är vald) som inte har \\Flagged."""
     resp = await imap._uid("fetch", uid_set(sorted(set(uids), key=int)), "(UID FLAGS)")
-    _require_ok(resp, f"Hämtningen av flaggorna i {STARRED}")
+    _require_ok(resp, i18n.t('Hämtningen av flaggorna i {STARRED}', STARRED=STARRED))
     unflagged: set[str] = set()
     for line in resp.lines:
         text = _decode(line)

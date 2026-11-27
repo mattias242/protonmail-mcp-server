@@ -10,6 +10,7 @@ from typing import Any
 
 import aioimaplib
 
+from . import i18n
 from . import policy
 from .config import Settings
 from .email_parser import (
@@ -58,7 +59,10 @@ _VALID_MAILBOX_RE = re.compile(r'[^\x00-\x1F\x7F\uD800-\uDFFF]{1,255}')
 
 def _validate_mailbox(name: str) -> str:
     if not _VALID_MAILBOX_RE.fullmatch(name):
-        raise ValueError(f"Ogiltigt mailbox-namn: {name!r}")
+        raise ValueError(i18n.t(
+                'Ogiltigt mailbox-namn: {name!r}',
+                name=name,
+            ))
     return name
 
 
@@ -90,7 +94,11 @@ def _to_imap_date(value: str, field: str = "datum") -> str:
         date(year, month, day)
     except ValueError:
         raise ValueError(
-            f"Ogiltigt datum för {field}: {value!r} — använd YYYY-MM-DD eller DD-Mon-YYYY"
+            i18n.t(
+                'Ogiltigt datum för {field}: {value!r} — använd YYYY-MM-DD eller DD-Mon-YYYY',
+                field=field,
+                value=value,
+            )
         ) from None
     return f"{day:02d}-{_MONTHS[month - 1]}-{year:04d}"
 
@@ -98,7 +106,10 @@ def _to_imap_date(value: str, field: str = "datum") -> str:
 def _validate_uid(uid: str) -> str:
     """Kastar ValueError om uid inte är ett rent heltal (förhindrar IMAP sequence-set-injektion)."""
     if not _VALID_UID_RE.fullmatch(uid):
-        raise ValueError(f"Ogiltigt UID: {uid!r} — måste vara ett heltal")
+        raise ValueError(i18n.t(
+                'Ogiltigt UID: {uid!r} — måste vara ett heltal',
+                uid=uid,
+            ))
     return uid
 
 
@@ -115,7 +126,11 @@ def _imap_quoted(value: str, field: str) -> str:
     av raden körs som ett eget kommando (aioimaplib kontrollerar inget).
     """
     if _CONTROL_CHAR_RE.search(value):
-        raise ValueError(f"{field} får inte innehålla kontrolltecken (t.ex. radbrytning): {value!r}")
+        raise ValueError(i18n.t(
+                '{field} får inte innehålla kontrolltecken (t.ex. radbrytning): {value!r}',
+                field=field,
+                value=value,
+            ))
     return f'"{_escape_imap_string(value)}"'
 
 
@@ -267,14 +282,18 @@ class _BridgeProtocol(aioimaplib.IMAP4ClientProtocol):
 
     def connection_lost(self, exc: Exception | None) -> None:
         reason = f": {exc}" if exc else ""
-        self.lost = ConnectionError(f"Anslutningen till ProtonMail Bridge bröts{reason}")
+        self.lost = ConnectionError(i18n.t('Anslutningen till ProtonMail Bridge bröts{reason}', reason=reason))
         for command in [self.pending_sync_command, *self.pending_async_commands.values()]:
             # Command saknar ett publikt sätt att misslyckas; _exception är det
             # aioimaplib självt använder för CommandTimeout
             if command is not None and not command._event.is_set():
                 command._exception = ConnectionError(
-                    f"Anslutningen till ProtonMail Bridge bröts under {command.name}{reason} "
-                    "— försök igen, nästa anrop ansluter på nytt"
+                    i18n.t(
+                        'Anslutningen till ProtonMail Bridge bröts under {name}{reason} — försök igen, nästa '
+                        'anrop ansluter på nytt',
+                        name=command.name,
+                        reason=reason,
+                    )
                 )
                 command.close(b"connection lost", "NO")
         super().connection_lost(exc)
@@ -282,7 +301,7 @@ class _BridgeProtocol(aioimaplib.IMAP4ClientProtocol):
     def send(self, line: str, scrub: str = None) -> None:
         if self.lost is not None:
             raise ConnectionError(
-                f"{self.lost} — försök igen, nästa anrop ansluter på nytt"
+                i18n.t('{lost} — försök igen, nästa anrop ansluter på nytt', lost=self.lost)
             )
         super().send(line, scrub=scrub)
 
@@ -374,21 +393,29 @@ class IMAPClient:
                 await client.wait_hello_from_server()
             except asyncio.TimeoutError:
                 raise asyncio.TimeoutError(
-                    f"ProtonMail Bridge på {host}:{port} skickade ingen hälsning "
-                    f"inom {self.timeout:g} s — körs Bridge?"
+                    i18n.t(
+                        'ProtonMail Bridge på {host}:{port} skickade ingen hälsning inom {timeout:g} s — körs '
+                        'Bridge?',
+                        host=host,
+                        port=port,
+                        timeout=self.timeout,
+                    )
                 ) from None
             try:
                 resp = await client.login(self._settings.username, self._settings.password)
             except asyncio.TimeoutError:
                 raise asyncio.TimeoutError(
-                    f"ProtonMail Bridge på {host}:{port} svarade inte på inloggningen "
-                    f"inom {self.timeout:g} s"
+                    i18n.t('ProtonMail Bridge på {host}:{port} svarade inte på inloggningen inom {timeout:g} s', host=host, port=port, timeout=self.timeout)
                 ) from None
             if resp.result != "OK":
                 detail = _response_text(resp)
                 raise IMAPAuthenticationError(
-                    f"Inloggningen mot ProtonMail Bridge misslyckades ({resp.result} {detail}) — "
-                    "kontrollera PROTONMAIL_USERNAME och Bridge-lösenordet"
+                    i18n.t(
+                        'Inloggningen mot ProtonMail Bridge misslyckades ({result} {detail}) — kontrollera '
+                        'PROTONMAIL_USERNAME och Bridge-lösenordet',
+                        result=resp.result,
+                        detail=detail,
+                    )
                 )
         except BaseException:
             # Även CancelledError: stäng socketen så att ingen halvinloggad session blir kvar
@@ -412,7 +439,7 @@ class IMAPClient:
         except (OSError, asyncio.TimeoutError) as exc:
             reason = str(exc) or type(exc).__name__
             raise ConnectionError(
-                f"Kan inte nå ProtonMail Bridge på {host}:{port} — körs Bridge? ({reason})"
+                i18n.t('Kan inte nå ProtonMail Bridge på {host}:{port} — körs Bridge? ({reason})', host=host, port=port, reason=reason)
             ) from exc
 
     async def disconnect(self) -> None:
@@ -440,7 +467,7 @@ class IMAPClient:
             self._discard_connection()
             detail = _response_text(resp)
             raise ValueError(
-                f"Mappen finns inte eller kan inte väljas: {mailbox!r}"
+                i18n.t('Mappen finns inte eller kan inte väljas: {mailbox!r}', mailbox=mailbox)
                 + (f" ({detail})" if detail else "")
             )
         if _exists(resp) == 0:
@@ -466,9 +493,12 @@ class IMAPClient:
             # "*" och "%" i namnet är jokertecken i LIST: bara exakt samma namn räknas
             if entry and entry[1] == mailbox and not describe_mailbox(mailbox, entry[0])["selectable"]:
                 raise ValueError(
-                    f"{mailbox} är en behållare, inte en mapp, och innehåller inga mejl. "
-                    f"Ange en mapp under den (t.ex. {mailbox}/…); list_mailboxes visar "
-                    "vilka som går att öppna (selectable: true)."
+                    i18n.t(
+                        '{mailbox} är en behållare, inte en mapp, och innehåller inga mejl. Ange en mapp under '
+                        'den (t.ex. {mailbox}/…); list_mailboxes visar vilka som går att öppna (selectable: '
+                        'true).',
+                        mailbox=mailbox,
+                    )
                 )
 
     async def _uid(self, command: str, *args: str):
@@ -477,7 +507,7 @@ class IMAPClient:
             return await _with_timeout(self._client.uid(command, *args), self.uid_timeout)
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError(
-                f"ProtonMail Bridge svarade inte på UID {command.upper()} inom {self.uid_timeout:g} s"
+                i18n.t('ProtonMail Bridge svarade inte på UID {upper} inom {uid_timeout:g} s', upper=command.upper(), uid_timeout=self.uid_timeout)
             ) from None
 
     async def _ensure_connected(self) -> None:
@@ -507,7 +537,7 @@ class IMAPClient:
         ut som en brevlåda utan mappar.
         """
         resp = await self._client.list('""', pattern)
-        _require_ok(resp, "Listningen av mappar")
+        _require_ok(resp, i18n.t('Listningen av mappar'))
         entries = []
         for line in resp.lines:
             entry = _parse_list_entry(_decode(line))
@@ -531,7 +561,11 @@ class IMAPClient:
         exists = _exists(select_resp) or 0
 
         if page < 1 or page_size < 1:
-            raise ValueError(f"page och page_size måste vara >= 1 (fick page={page}, page_size={page_size})")
+            raise ValueError(i18n.t(
+                    'page och page_size måste vara >= 1 (fick page={page}, page_size={page_size})',
+                    page=page,
+                    page_size=page_size,
+                ))
 
         total_pages = math.ceil(exists / page_size) if exists > 0 else 0
 
@@ -552,7 +586,7 @@ class IMAPClient:
 
         fetch_resp = await self._client.fetch(f"{start}:{stop}", _METADATA_ITEMS)
         # Ett nekat FETCH får inte se ut som en tom sida
-        _require_ok(fetch_resp, f"Hämtningen av sida {page} i {mailbox}")
+        _require_ok(fetch_resp, i18n.t('Hämtningen av sida {page} i {mailbox}', page=page, mailbox=mailbox))
 
         msgs = _sort_newest_first(_parse_fetch_metadata(fetch_resp.lines))
         return {
@@ -572,7 +606,7 @@ class IMAPClient:
         resp = await self._client.uid("fetch", safe_uid, "BODY.PEEK[]")
         # NO/BAD är ett serverfel, inte "finns inte": None betyder bara att
         # svaret var OK men saknade meddelandet
-        _require_ok(resp, f"Hämtningen av UID {safe_uid} i {mailbox}")
+        _require_ok(resp, i18n.t('Hämtningen av UID {safe_uid} i {mailbox}', safe_uid=safe_uid, mailbox=mailbox))
         # lines[0] = "SEQNUM FETCH (BODY[] {SIZE}"
         # lines[1] = bytearray with raw email
         for line in resp.lines:
@@ -626,7 +660,10 @@ class IMAPClient:
         """
         # Validera allt innan något skickas till servern
         if max_results < 1:
-            raise ValueError(f"max_results måste vara >= 1 (fick {max_results})")
+            raise ValueError(i18n.t(
+                    'max_results måste vara >= 1 (fick {max_results})',
+                    max_results=max_results,
+                ))
         terms: list[tuple[str, str]] = []  # (fält i metadata, sökterm)
         text_criteria: list[str] = []
         if from_addr:
@@ -720,11 +757,18 @@ class IMAPClient:
         # Skyddsnät: värdena är redan validerade, men ett kontrolltecken här
         # skulle avsluta kommandot i förtid och göra resten till ett nytt
         if _CONTROL_CHAR_RE.search(command):
-            raise ValueError(f"Otillåtet tecken i IMAP-sökkommandot: {command!r}")
+            raise ValueError(i18n.t(
+                    'Otillåtet tecken i IMAP-sökkommandot: {command!r}',
+                    command=command,
+                ))
         resp = await self._client.search(command)
         if resp.result != "OK":
             # Annars ser t.ex. ett ogiltigt datum ut som "inga träffar"
-            raise ValueError(f"Sökningen misslyckades ({resp.result}): {_response_text(resp)}")
+            raise ValueError(i18n.t(
+                    'Sökningen misslyckades ({result}): {response_text}',
+                    result=resp.result,
+                    response_text=_response_text(resp),
+                ))
         return sorted(_parse_seqnums(resp), key=int)
 
     async def _fetch_metadata(self, seqnums: list[str], content_type: bool = False) -> list[dict[str, Any]]:
@@ -744,7 +788,11 @@ class IMAPClient:
             )
             if fetch_resp.result != "OK":
                 raise ValueError(
-                    f"Hämtningen av sökträffarna misslyckades ({fetch_resp.result}): {_response_text(fetch_resp)}"
+                    i18n.t(
+                        'Hämtningen av sökträffarna misslyckades ({result}): {response_text}',
+                        result=fetch_resp.result,
+                        response_text=_response_text(fetch_resp),
+                    )
                 )
             msgs += _parse_fetch_metadata(fetch_resp.lines, extra_headers=extra)
         return msgs
@@ -771,7 +819,7 @@ class IMAPClient:
         for start in range(0, len(uids), _FETCH_CHUNK_SIZE):
             chunk = uids[start:start + _FETCH_CHUNK_SIZE]
             resp = await self._uid("fetch", ",".join(chunk), "(UID BODYSTRUCTURE)")
-            _require_ok(resp, "Hämtningen av mejlens struktur (BODYSTRUCTURE)")
+            _require_ok(resp, i18n.t('Hämtningen av mejlens struktur (BODYSTRUCTURE)'))
             found |= _attachment_uids(resp.lines)
         return found
 
@@ -785,7 +833,7 @@ class IMAPClient:
         await self._require_uid(mailbox, safe_uid)
         action = "+FLAGS" if add else "-FLAGS"
         resp = await self._uid("store", safe_uid, action, flags)
-        _require_ok(resp, f"Ändringen av flaggorna på UID {safe_uid} i {mailbox}")
+        _require_ok(resp, i18n.t('Ändringen av flaggorna på UID {safe_uid} i {mailbox}', safe_uid=safe_uid, mailbox=mailbox))
         return True
 
     @_serialized
@@ -826,7 +874,7 @@ class IMAPClient:
                 "note": imap_bulk.already_there_note([safe_uid], mailbox, target),
             }
         resp = await self._uid("move", safe_uid, quoted_target)
-        _require_ok(resp, f"Flytten av UID {safe_uid} från {mailbox} till {target}")
+        _require_ok(resp, i18n.t('Flytten av UID {safe_uid} från {mailbox} till {target}', safe_uid=safe_uid, mailbox=mailbox, target=target))
         return True
 
     @_serialized
@@ -844,14 +892,17 @@ class IMAPClient:
         if not permanent:
             if key == "trash":
                 raise ValueError(
-                    "Mejlet ligger redan i Trash. Använd permanent=True för att radera det permanent."
+                    i18n.t('Mejlet ligger redan i Trash. Använd permanent=True för att radera det permanent.')
                 )
             return await self._move(mailbox, safe_uid, "Trash")
 
         if key not in _READD_DELETES:
             raise ValueError(
-                f"Permanent radering görs bara i Trash eller Drafts, inte i {mailbox}. "
-                "Ta bort mejlet utan permanent först, så hamnar det i Trash."
+                i18n.t(
+                    'Permanent radering görs bara i Trash eller Drafts, inte i {mailbox}. Ta bort mejlet '
+                    'utan permanent först, så hamnar det i Trash.',
+                    mailbox=mailbox,
+                )
             )
         from . import imap_bulk  # imap_bulk bygger på den här modulen
 
@@ -859,7 +910,7 @@ class IMAPClient:
         await self._select(mailbox)
         await self._require_uid(mailbox, safe_uid)
         _, failed = await imap_bulk.permanent_delete_found(
-            self, mailbox, [safe_uid], f"Den permanenta raderingen av UID {safe_uid} i {mailbox}"
+            self, mailbox, [safe_uid], i18n.t('Den permanenta raderingen av UID {safe_uid} i {mailbox}', safe_uid=safe_uid, mailbox=mailbox)
         )
         if failed:
             raise ValueError(failed[0]["error"])
@@ -872,14 +923,18 @@ class IMAPClient:
         finns, så utan kontrollen skulle verktygen rapportera lyckat för ingenting.
         """
         resp = await self._uid("fetch", uid, "(UID)")
-        _require_ok(resp, f"Kontrollen av UID {uid} i {mailbox}")
+        _require_ok(resp, i18n.t('Kontrollen av UID {uid} i {mailbox}', uid=uid, mailbox=mailbox))
         for line in resp.lines:
             m = _UID_RE.search(_decode(line))
             if m and int(m.group(1)) == int(uid):
                 return
         raise ValueError(
-            f"Inget meddelande med UID {uid} i {mailbox}. "
-            "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+            i18n.t(
+                'Inget meddelande med UID {uid} i {mailbox}. UID:n gäller per mapp — kontrollera att '
+                'mailbox är samma mapp som UID:t kom från.',
+                uid=uid,
+                mailbox=mailbox,
+            )
         )
 
     @_serialized
@@ -892,7 +947,7 @@ class IMAPClient:
             "fetch", safe_uid,
             "BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID REPLY-TO)]"
         )
-        _require_ok(resp, f"Hämtningen av rubrikerna för UID {safe_uid} i {mailbox}")
+        _require_ok(resp, i18n.t('Hämtningen av rubrikerna för UID {safe_uid} i {mailbox}', safe_uid=safe_uid, mailbox=mailbox))
         for line in resp.lines:
             if isinstance(line, bytearray) and len(line) > 4:
                 return _parse_headers(bytes(line))
@@ -905,7 +960,7 @@ class IMAPClient:
         quoted = _quote_mailbox(name)
         await self._ensure_connected()
         resp = await self._client.create(quoted)
-        _require_ok(resp, f"Att skapa {kind}en {name}" + _parent_hint(name))
+        _require_ok(resp, i18n.t('Att skapa {the_kind} {name}', the_kind=_definite(kind), name=name) + _parent_hint(name))
         return True
 
     @_serialized
@@ -922,21 +977,30 @@ class IMAPClient:
         quoted = _quote_mailbox(name)
         await self._ensure_connected()
         status = await self._client.status(quoted, "(MESSAGES)")
-        _require_ok(status, f"Kontrollen av {kind}en {name}")
+        _require_ok(status, i18n.t('Kontrollen av {the_kind} {name}', the_kind=_definite(kind), name=name))
         count = _status_messages(status)
         if count is None:
-            raise ValueError(f"Kunde inte läsa antal mejl i {name}: {_response_text(status)}")
+            raise ValueError(i18n.t(
+                    'Kunde inte läsa antal mejl i {name}: {response_text}',
+                    name=name,
+                    response_text=_response_text(status),
+                ))
         if count and not force:
             raise ValueError(
-                f"{kind.capitalize()}en {name} är inte tom ({count} mejl) och tas inte bort. "
-                f"Med force=True tas den bort ändå: mejlen raderas inte, men för en etikett "
-                f"försvinner etiketten från alla {count} mejl, och för en mapp ligger mejlen "
-                "sedan inte kvar i mappen (de finns i All Mail)."
+                i18n.t(
+                    '{The_kind} {name} är inte tom ({count} mejl) och tas inte bort. Med force=True '
+                    'tas den bort ändå: mejlen raderas inte, men för en etikett försvinner etiketten från '
+                    'alla {count} mejl, och för en mapp ligger mejlen sedan inte kvar i mappen (de finns i '
+                    'All Mail).',
+                    The_kind=_definite(kind).capitalize(),
+                    name=name,
+                    count=count,
+                )
             )
         if not force:
             await self._refuse_subfolders(name, kind)
         resp = await self._client.delete(quoted)
-        _require_ok(resp, f"Att ta bort {kind}en {name}")
+        _require_ok(resp, i18n.t('Att ta bort {the_kind} {name}', the_kind=_definite(kind), name=name))
         return True
 
     async def _refuse_subfolders(self, name: str, kind: str) -> None:
@@ -949,11 +1013,17 @@ class IMAPClient:
         if children:
             shown = ", ".join(children[:5]) + (" …" if len(children) > 5 else "")
             raise ValueError(
-                f"{kind.capitalize()}en {name} har {len(children)} "
-                f"undermapp{'ar' if len(children) != 1 else ''} ({shown}) och tas "
-                "inte bort. Bridge kontrollerar inte undermapparna, och vad Proton gör med dem "
-                "och deras mejl när föräldern tas bort är inte känt. Ta bort eller flytta "
-                "undermapparna först, eller använd force=True för att ta bort den ändå."
+                i18n.t(
+                    '{The_kind} {name} har {len} {subfolders} ({shown}) och tas inte bort. Bridge '
+                    'kontrollerar inte undermapparna, och vad Proton gör med dem och deras mejl när '
+                    'föräldern tas bort är inte känt. Ta bort eller flytta undermapparna först, eller '
+                    'använd force=True för att ta bort den ändå.',
+                    The_kind=_definite(kind).capitalize(),
+                    name=name,
+                    len=len(children),
+                    subfolders=i18n.t('undermappar') if len(children) != 1 else i18n.t('undermapp'),
+                    shown=shown,
+                )
             )
 
     @_serialized
@@ -963,13 +1033,17 @@ class IMAPClient:
         new_kind = _check_user_folder(new_name)
         if old_kind != new_kind:
             raise ValueError(
-                f"Proton kan inte byta mellan mapp och etikett ({old_name} → {new_name}). "
-                "Behåll prefixet: Folders/ → Folders/ eller Labels/ → Labels/."
+                i18n.t(
+                    'Proton kan inte byta mellan mapp och etikett ({old_name} → {new_name}). Behåll '
+                    'prefixet: Folders/ → Folders/ eller Labels/ → Labels/.',
+                    old_name=old_name,
+                    new_name=new_name,
+                )
             )
         quoted_old, quoted_new = _quote_mailbox(old_name), _quote_mailbox(new_name)
         await self._ensure_connected()
         resp = await self._client.rename(quoted_old, quoted_new)
-        _require_ok(resp, f"Namnbytet {old_name} → {new_name}" + _parent_hint(new_name))
+        _require_ok(resp, i18n.t('Namnbytet {old_name} → {new_name}', old_name=old_name, new_name=new_name) + _parent_hint(new_name))
         return True
 
     @_serialized
@@ -979,7 +1053,11 @@ class IMAPClient:
         resp = await self._client.status(quoted, "(MESSAGES UNSEEN)")
         if resp.result != "OK":
             raise ValueError(
-                f"Mappen finns inte eller kan inte läsas: {mailbox!r} ({_response_text(resp)})"
+                i18n.t(
+                    'Mappen finns inte eller kan inte läsas: {mailbox!r} ({response_text})',
+                    mailbox=mailbox,
+                    response_text=_response_text(resp),
+                )
             )
         items = _status_items(resp)
         if items.get("messages") == 0:
@@ -1006,7 +1084,10 @@ def _flag_criteria(value: bool | None, true_key: str, false_key: str, negate_tru
     if value is None:
         return []
     if not isinstance(value, bool):
-        raise ValueError(f"Filtret måste vara true, false eller null (fick {value!r})")
+        raise ValueError(i18n.t(
+                'Filtret måste vara true, false eller null (fick {value!r})',
+                value=value,
+            ))
     if negate_true:
         value = not value
     return [true_key if value else false_key]
@@ -1015,7 +1096,11 @@ def _flag_criteria(value: bool | None, true_key: str, false_key: str, negate_tru
 def _validate_size(value: object, field: str) -> int:
     """Storleksgräns i byte för LARGER/SMALLER: ett heltal >= 0 (inte bool)."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{field} måste vara ett heltal >= 0 (byte), fick {value!r}")
+        raise ValueError(i18n.t(
+                '{field} måste vara ett heltal >= 0 (byte), fick {value!r}',
+                field=field,
+                value=value,
+            ))
     return value
 
 
@@ -1229,7 +1314,12 @@ def _parse_fetch_metadata(lines: list, extra_headers: tuple[str, ...] = ()) -> l
 
 def _require_ok(resp, what: str) -> None:
     if resp.result != "OK":
-        raise ValueError(f"{what} misslyckades ({resp.result}): {_response_text(resp)}")
+        raise ValueError(i18n.t(
+                '{what} misslyckades ({result}): {response_text}',
+                what=what,
+                result=resp.result,
+                response_text=_response_text(resp),
+            ))
 
 
 def _mailbox_key(name: str) -> str:
@@ -1257,29 +1347,41 @@ def _check_move(source: str, target: str) -> None:
     src, dst = _mailbox_key(source), _mailbox_key(target)
     if src == dst:
         raise ValueError(
-            f"Källa och mål är samma mapp ({source}). Bridge tar då först bort mejlet ur "
-            "mappen och lägger sedan tillbaka det — i Trash och Drafts raderas det permanent."
+            i18n.t(
+                'Källa och mål är samma mapp ({source}). Bridge tar då först bort mejlet ur mappen och '
+                'lägger sedan tillbaka det — i Trash och Drafts raderas det permanent.',
+                source=source,
+            )
         )
     if "all mail" in (src, dst):
         raise ValueError(
-            "Bridge tillåter inte flytt till eller från All Mail. Ange mappen där mejlet "
-            "ligger (t.ex. INBOX, Archive eller Folders/…) som källa."
+            i18n.t(
+                'Bridge tillåter inte flytt till eller från All Mail. Ange mappen där mejlet ligger '
+                '(t.ex. INBOX, Archive eller Folders/…) som källa.',
+            )
         )
     if {src, dst} == {"inbox", "sent"}:
-        raise ValueError("Bridge tillåter inte flytt mellan INBOX och Sent.")
+        raise ValueError(i18n.t('Bridge tillåter inte flytt mellan INBOX och Sent.'))
     if dst == "starred":
         # Bridge räknar Starred som systemetikett: UID MOVE dit tar bort mejlet
         # ur källmappen, så det bara ligger kvar i Starred och All Mail
         raise ValueError(
-            f"Starred är inget mål för flytt: Bridge tar då bort mejlet ur {source}. "
-            "Stjärnmärkning görs med flaggan \\Flagged, inte genom att flytta mejlet — "
-            "använd flag_email (och unflag_email för att ta bort stjärnan)."
+            i18n.t(
+                'Starred är inget mål för flytt: Bridge tar då bort mejlet ur {source}. Stjärnmärkning '
+                'görs med flaggan \\Flagged, inte genom att flytta mejlet — använd flag_email (och '
+                'unflag_email för att ta bort stjärnan).',
+                source=source,
+            )
         )
     if dst in _READD_DELETES and _is_label_view(source):
         raise ValueError(
-            f"Flytt till {target} från {source} avvisas: mejlet kan redan ligga i {target}, "
-            "och då raderar Bridge det permanent. Ange mappen där mejlet ligger "
-            "(t.ex. INBOX, Archive eller Folders/…) som källa."
+            i18n.t(
+                'Flytt till {target} från {source} avvisas: mejlet kan redan ligga i {target}, och då '
+                'raderar Bridge det permanent. Ange mappen där mejlet ligger (t.ex. INBOX, Archive '
+                'eller Folders/…) som källa.',
+                target=target,
+                source=source,
+            )
         )
 
 
@@ -1297,23 +1399,33 @@ def _check_user_folder(name: str) -> str:
         if name.startswith(prefix) and name[len(prefix):]:
             if kind == "etikett" and _LEVEL_SEP_RE.search(name[len(prefix):]):
                 raise ValueError(
-                    f"Underetiketter finns inte i Proton: {name!r}. Etiketter ligger bara "
-                    "direkt under Labels/ (t.ex. Labels/Kunder). Använd Folders/… för en "
-                    "mapphierarki."
+                    i18n.t(
+                        'Underetiketter finns inte i Proton: {name!r}. Etiketter ligger bara direkt under '
+                        'Labels/ (t.ex. Labels/Kunder). Använd Folders/… för en mapphierarki.',
+                        name=name,
+                    )
                 )
             return kind
     raise ValueError(
-        f"Ogiltigt namn {name!r}: egna mappar måste börja med 'Folders/' (t.ex. "
-        "'Folders/Projekt') och etiketter med 'Labels/' (t.ex. 'Labels/Kvitton'). "
-        "Systemmapparna (INBOX, Trash, All Mail …) kan inte skapas, döpas om eller tas bort."
+        i18n.t(
+            "Ogiltigt namn {name!r}: egna mappar måste börja med 'Folders/' (t.ex. "
+            "'Folders/Projekt') och etiketter med 'Labels/' (t.ex. 'Labels/Kvitton'). "
+            'Systemmapparna (INBOX, Trash, All Mail …) kan inte skapas, döpas om eller tas bort.',
+            name=name,
+        )
     )
+
+
+def _definite(kind: str) -> str:
+    """\"mappen\" eller \"etiketten\" (kind från _check_user_folder) på det inställda språket."""
+    return i18n.t("mappen") if kind == "mapp" else i18n.t("etiketten")
 
 
 def _parent_hint(name: str) -> str:
     """Förklaring när en undermapp inte kunde skapas: föräldern måste finnas."""
     parts = _LEVEL_SEP_RE.split(name)
     if name.startswith("Folders/") and len(parts) > 2:
-        return f" (för en undermapp måste {'/'.join(parts[:-1])} redan finnas)"
+        return i18n.t(' (för en undermapp måste {parent} redan finnas)', parent='/'.join(parts[:-1]))
     return ""
 
 
