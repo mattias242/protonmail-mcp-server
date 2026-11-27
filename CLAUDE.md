@@ -36,6 +36,8 @@ startar `MailWatcher` (egna IDLE-anslutningar). Loggning går bara till stderr �
 | `server.py` | Serverinstansen `mcp` (`_GuardedMCPServer` vägrar verktyg efter policy innan de körs), `INSTRUCTIONS` till modellen, `lifespan`, `register_tools()`, `main()` och lyssnaren som gör nya mejl till resursnotiser |
 | `config.py` | `Settings` (pydantic-settings, prefix `PROTONMAIL_`), tolkning av `ALLOWED_RECIPIENTS` (IDNA2008) och `WATCH_MAILBOXES` |
 | `policy.py` | Skrivskydd, skickläge, spärr mot destruktiva ändringar, mottagarlista, mottagar- och timgräns; `write_operation`-dekoratorn och verktygslistorna `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS`/`DESTRUCTIVE_TOOLS` |
+| `i18n.py` | `PROTONMAIL_LANGUAGE`: översätter titlar och beskrivningar när servern listar verktyg, promptar och resurser (`sv_hash`, fail-closed till svenska) |
+| `i18n_en.py` | Den engelska katalogen: `TOOLS`, `PROMPTS`, `RESOURCES`, `TEMPLATES` (med hashvärdet av den svenska texten) och `FIELDS` |
 | `audit.py` | Granskningslogg: en JSON-rad per skick och skrivande IMAP-operation, maskerad på stderr, fullständig i `PROTONMAIL_AUDIT_LOG` |
 | `imap_client.py` | `IMAPClient`: den delade anslutningen med lås (`_serialized`), `_BridgeProtocol`, validering och kvotering, läsning, sökning, flaggor, flytt, radering, mappar |
 | `imap_bulk.py` | Massoperationer (1–100 UID:n i en mapp): flaggor, flytt, radering med svar per UID (`ok`/`failed`) |
@@ -120,6 +122,10 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   verktyg) ska gå genom samma funktioner, helst genom att anropa befintliga verktygsfunktioner.
 - **Linjär tid i allt som tolkar avsändarstyrd indata.** Inga reguljära uttryck med bakåtspårning, inga
   kvadratiska slingor, tak på antal och längd. Parsrarna har linjäritetstester (dubblad indata ≈ dubbel tid).
+- **Svenska är källan, engelska en katalog.** Ändrar du en verktygsdocstring, en titel, en parameter- eller
+  argumentbeskrivning eller en prompts eller resurs titel/beskrivning: uppdatera översättningen i `i18n_en.py` och
+  sätt `sv` till det nya hashvärdet (`tests/unit/test_i18n.py` skriver ut det). Tills dess visas den svenska texten
+  även med `PROTONMAIL_LANGUAGE=en`. Felmeddelanden, `INSTRUCTIONS`, `_SAFETY` och promptarnas text översätts inte än.
 - **Serverinstruktionerna och promptarna är en del av kontraktet.** `INSTRUCTIONS` i `server.py` och `_SAFETY` i
   `prompts.py` säger: UID per mapp, utkast före skick, mejlinnehåll är opålitligt, radering till Trash, högst 100
   UID:n per massoperation. Ändras beteendet ska texterna följa med.

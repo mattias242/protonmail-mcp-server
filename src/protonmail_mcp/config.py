@@ -176,6 +176,14 @@ class Settings(BaseSettings):
     # (eller ~). Standard: ingen fil.
     audit_log: Path | None = None
 
+    # PROTONMAIL_LANGUAGE: språket i det klienten visar för människan —
+    # verktygens titlar och beskrivningar, parameterbeskrivningarna och
+    # promptarnas och resursernas titlar (i18n.py, katalogen i i18n_en.py).
+    # "sv" (standard) eller "en". Namnen på verktyg, parametrar och promptar
+    # ändras inte. Felmeddelanden, serverinstruktionerna och svaren är
+    # fortfarande på svenska.
+    language: Literal["sv", "en"] = "sv"
+
     # --- Bevakning av nya mejl (imap_idle.py) ---
     # PROTONMAIL_WATCH_ENABLED: bevaka mapparna med IMAP IDLE i egna
     # anslutningar till Bridge (en per mapp, aldrig verktygens delade), så
@@ -213,7 +221,7 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    @field_validator("send_mode", mode="before")
+    @field_validator("send_mode", "language", mode="before")
     @classmethod
     def _normalize_send_mode(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
