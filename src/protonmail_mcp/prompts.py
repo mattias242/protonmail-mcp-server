@@ -52,7 +52,10 @@ _PROMPT_UNSAFE_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 def _check_prompt_text(value: str, field: str) -> str:
     """value oförändrat, eller ValueError om det kan bryta raden i prompttexten."""
     if _PROMPT_UNSAFE_RE.search(value):
-        raise ValueError(f"{field} får inte innehålla radbrytningar eller andra kontrolltecken")
+        raise ValueError(i18n.t(
+                '{field} får inte innehålla radbrytningar eller andra kontrolltecken',
+                field=field,
+            ))
     return value
 
 _MailboxArg = Annotated[Mailbox, Field(description="Mappnamn, t.ex. INBOX eller Folders/Kunder")]

@@ -9,6 +9,7 @@ import hmac
 import logging
 from contextlib import asynccontextmanager
 
+from . import i18n
 from ._sdk import MCPServer, TransportSecuritySettings
 
 logger = logging.getLogger(__name__)
@@ -28,13 +29,20 @@ def require_token(settings) -> str:
     token = settings.http_token.get_secret_value() if settings.http_token is not None else ""
     if not token:
         raise ValueError(
-            "HTTP-läget kräver PROTONMAIL_HTTP_TOKEN: API-nyckeln som varje anrop måste ha, "
-            f"minst {MIN_TOKEN_LENGTH} tecken. Skapa en med t.ex. `openssl rand -hex 32`."
+            i18n.t(
+                'HTTP-läget kräver PROTONMAIL_HTTP_TOKEN: API-nyckeln som varje anrop måste ha, minst '
+                '{MIN_TOKEN_LENGTH} tecken. Skapa en med t.ex. `openssl rand -hex 32`.',
+                MIN_TOKEN_LENGTH=MIN_TOKEN_LENGTH,
+            )
         )
     if len(token) < MIN_TOKEN_LENGTH:
         raise ValueError(
-            f"PROTONMAIL_HTTP_TOKEN måste vara minst {MIN_TOKEN_LENGTH} tecken "
-            f"(den är {len(token)}). Skapa en med t.ex. `openssl rand -hex 32`."
+            i18n.t(
+                'PROTONMAIL_HTTP_TOKEN måste vara minst {MIN_TOKEN_LENGTH} tecken (den är {len}). '
+                'Skapa en med t.ex. `openssl rand -hex 32`.',
+                MIN_TOKEN_LENGTH=MIN_TOKEN_LENGTH,
+                len=len(token),
+            )
         )
     return token
 
@@ -48,8 +56,11 @@ def parse_allowed_hosts(value: str) -> list[str]:
             continue
         if "*" in host or "/" in host or ":" in host or " " in host:
             raise ValueError(
-                f"Ogiltigt värdnamn i PROTONMAIL_HTTP_ALLOWED_HOSTS: {entry.strip()!r}. "
-                "Ange bara värdnamn, t.ex. protonmail-mcp.exempel.se (utan https://, port eller *)."
+                i18n.t(
+                    'Ogiltigt värdnamn i PROTONMAIL_HTTP_ALLOWED_HOSTS: {strip!r}. Ange bara värdnamn, '
+                    't.ex. protonmail-mcp.exempel.se (utan https://, port eller *).',
+                    strip=entry.strip(),
+                )
             )
         hosts.append(host)
     return hosts

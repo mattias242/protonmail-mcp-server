@@ -15,6 +15,7 @@ så ett påhittat högt since_uid kan inte dölja kommande mejl.
 import asyncio
 from typing import Annotated, Any
 
+from .. import i18n
 from .._sdk import Context
 from pydantic import Field
 
@@ -276,8 +277,11 @@ async def wait_for_new_email(
             result = await _within(_collect(app, mailbox, None), deadline + DEADLINE_MARGIN - loop.time())
         except _Overdue:
             raise asyncio.TimeoutError(
-                f"ProtonMail Bridge svarade inte inom {timeout_seconds} s (timeout_seconds) — "
-                "frågan avbröts. Kontrollera att Bridge körs och inte har hängt sig."
+                i18n.t(
+                    'ProtonMail Bridge svarade inte inom {timeout_seconds} s (timeout_seconds) — frågan '
+                    'avbröts. Kontrollera att Bridge körs och inte har hängt sig.',
+                    timeout_seconds=timeout_seconds,
+                )
             ) from None
         if result.get("reset") and reset is None:
             reset = {"reset": True, "recovered": result.get("recovered", False)}

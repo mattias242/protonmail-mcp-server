@@ -25,6 +25,7 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from . import i18n
 from .imap_client import (
     _FETCH_CHUNK_SIZE,
     _CONTROL_CHAR_RE,
@@ -139,7 +140,7 @@ async def _fetch_thread_metadata(imap, seqnums: list[str]) -> list[dict[str, Any
         resp = await imap._client.fetch(
             ",".join(chunk), f"(UID FLAGS BODY.PEEK[HEADER.FIELDS ({_THREAD_FIELDS})])"
         )
-        _require_ok(resp, f"Hämtningen av konversationens mejl i {ALL_MAIL}")
+        _require_ok(resp, i18n.t('Hämtningen av konversationens mejl i {ALL_MAIL}', ALL_MAIL=ALL_MAIL))
         msgs += _parse_fetch_metadata(resp.lines, extra_headers=_EXTRA)
     return msgs
 
@@ -149,12 +150,16 @@ async def _read_start(imap, uid: str, mailbox: str) -> dict[str, Any]:
     await imap._ensure_connected()
     await imap._select(mailbox)
     resp = await imap._uid("fetch", uid, f"(UID FLAGS BODY.PEEK[HEADER.FIELDS ({_THREAD_FIELDS})])")
-    _require_ok(resp, f"Hämtningen av UID {uid} i {mailbox}")
+    _require_ok(resp, i18n.t('Hämtningen av UID {uid} i {mailbox}', uid=uid, mailbox=mailbox))
     start = next((m for m in _parse_fetch_metadata(resp.lines, extra_headers=_EXTRA) if m["uid"] == uid), None)
     if start is None:
         raise ValueError(
-            f"Inget meddelande med UID {uid} i {mailbox}. "
-            "UID:n gäller per mapp — kontrollera att mailbox är samma mapp som UID:t kom från."
+            i18n.t(
+                'Inget meddelande med UID {uid} i {mailbox}. UID:n gäller per mapp — kontrollera att '
+                'mailbox är samma mapp som UID:t kom från.',
+                uid=uid,
+                mailbox=mailbox,
+            )
         )
     return start
 
@@ -188,7 +193,11 @@ async def get_thread(imap, uid: str, mailbox: str, max_messages: int = 50) -> di
     safe_uid = _validate_uid(uid)
     _quote_mailbox(mailbox)
     if isinstance(max_messages, bool) or not isinstance(max_messages, int) or not 1 <= max_messages <= _MAX_LIMIT:
-        raise ValueError(f"max_messages måste vara ett heltal 1–{_MAX_LIMIT} (fick {max_messages!r})")
+        raise ValueError(i18n.t(
+                'max_messages måste vara ett heltal 1–{MAX_LIMIT} (fick {max_messages!r})',
+                MAX_LIMIT=_MAX_LIMIT,
+                max_messages=max_messages,
+            ))
 
     start = await _read_start(imap, safe_uid, mailbox)
     own_id = _message_ids(start["message_id"])

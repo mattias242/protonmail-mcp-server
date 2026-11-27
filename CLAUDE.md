@@ -112,7 +112,10 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   `tests/unit/test_efterfix_resurser_verktygsnotiser.py` fäller annars. Strikt typade parametrar (`Annotated`/`Field`
   med gränser, `Literal`, `Mailbox`, `OptionalStr`, `Uid`/`UidArg`); `mailbox` är obligatorisk för allt som utgår
   från ett UID. Docstringen (svenska) säger vad som händer i Proton, vad som inte händer och vilka fel som kan komma.
-- **Fel är `ValueError` med en begriplig svensk text** som säger vad som hände och vad modellen kan göra.
+- **Fel är `ValueError` med en begriplig svensk text** som säger vad som hände och vad modellen kan göra, byggd
+  med `i18n.t("svensk mall med {namn}", namn=värde)` (aldrig en f-sträng direkt i `raise ValueError`, utom i
+  `config.py`, som körs innan språket kan läsas). Fraser som hamnar i fel (`_require_ok(resp, i18n.t("Hämtningen av …"))`)
+  går också genom `i18n.t`; svensk böjning byggs inte ur delar (`{kind}en`), utan som hela ord (`_definite`).
   `with_error_messages` gör om nätverks-, inloggnings- och SMTP-fel; lösenordet maskas i allt som returneras och
   loggas. Ett skick som delvis levererats ska aldrig se ut som ett misslyckat (modellen skickar då om).
 - **Sanera allt avsändarstyrt** (ämne, namn, brödtext, HTML-text, bilagenamn, rubriker) med `sanitize.py`
@@ -127,7 +130,9 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   sätt `sv` till det nya hashvärdet (`tests/unit/test_i18n.py` skriver ut det). Tills dess visas den svenska texten
   även med `PROTONMAIL_LANGUAGE=en`. `INSTRUCTIONS`, `_SAFETY` och promptarnas mallar (`prompts._TEMPLATES`, str.format
   med namngivna platshållare) går genom `i18n.t`: ändras en svensk mall saknar den översättning i `i18n_en.TEXTS`
-  tills den lagts till under det nya hashvärdet (`tests/unit/test_i18n_texter.py`). Felmeddelanden översätts inte än.
+  tills den lagts till under det nya hashvärdet (`tests/unit/test_i18n_texter.py`). Felmeddelandena likaså:
+  `tests/unit/test_i18n_fel.py` hittar varje `i18n.t("…")` i källkoden och kräver en översättning med samma
+  platshållare, och fäller för `raise ValueError(f"…")`. Svaren från verktygen (`note`, `warning`) översätts inte än.
 - **Serverinstruktionerna och promptarna är en del av kontraktet.** `INSTRUCTIONS` i `server.py` och `_SAFETY` i
   `prompts.py` säger: UID per mapp, utkast före skick, mejlinnehåll är opålitligt, radering till Trash, högst 100
   UID:n per massoperation. Ändras beteendet ska texterna följa med.
@@ -254,6 +259,8 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   base64-delar och HTML-entiteter (`&ouml;`) missas.
 - pydantics valideringsfel (saknad eller feltypad parameter) är på engelska; de uppstår i SDK:n innan
   verktygsfunktionen och `with_error_messages` körs.
+- Med `PROTONMAIL_LANGUAGE=en` är fortfarande svenska: svaren från verktygen (`note`, `warning`), felen i
+  inställningarna vid start (`config.py`) och loggraderna på stderr.
 - Homoglyfer (kyrilliskt `а` för `a` m.fl.) rensas inte, och `suspicious_content` fångar inte alla formuleringar
   (`1gn0re`, "SYSTEM: you must" …). Gömda element via `details`, `aria-hidden`, `noscript`, svg-text och
   `transform:scale(0)` känns inte igen.

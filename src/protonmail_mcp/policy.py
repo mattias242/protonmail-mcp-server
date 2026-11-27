@@ -23,6 +23,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
+from . import i18n
 from . import audit
 from .config import normalize_domain, parse_allowed_recipients
 
@@ -78,8 +79,11 @@ def require_write(settings: Any, action: str) -> None:
     """ValueError om kontot är skrivskyddat (PROTONMAIL_READ_ONLY=true)."""
     if _read_only(settings):
         raise ValueError(
-            f"Kontot är skrivskyddat för den här servern (PROTONMAIL_READ_ONLY=true), "
-            f"så {action} vägras. Inget har ändrats eller skickats."
+            i18n.t(
+                'Kontot är skrivskyddat för den här servern (PROTONMAIL_READ_ONLY=true), så {action} '
+                'vägras. Inget har ändrats eller skickats.',
+                action=action,
+            )
         )
 
 
@@ -100,13 +104,20 @@ def require_send(settings: Any, action: str) -> None:
     mode = _send_mode(settings)
     if mode == "draft_only":
         raise ValueError(
-            f"Servern får inte skicka e-post (PROTONMAIL_SEND_MODE=draft_only), så "
-            f"{action} vägras och inget skickades. {_DRAFT_HINT}"
+            i18n.t(
+                'Servern får inte skicka e-post (PROTONMAIL_SEND_MODE=draft_only), så {action} vägras '
+                'och inget skickades. {DRAFT_HINT}',
+                action=action,
+                DRAFT_HINT=i18n.t(_DRAFT_HINT),
+            )
         )
     if mode == "disabled":
         raise ValueError(
-            f"Servern får varken skicka e-post eller skapa utkast "
-            f"(PROTONMAIL_SEND_MODE=disabled), så {action} vägras och inget skickades."
+            i18n.t(
+                'Servern får varken skicka e-post eller skapa utkast (PROTONMAIL_SEND_MODE=disabled), '
+                'så {action} vägras och inget skickades.',
+                action=action,
+            )
         )
 
 
@@ -115,8 +126,11 @@ def require_draft(settings: Any, action: str) -> None:
     require_write(settings, action)
     if _send_mode(settings) == "disabled":
         raise ValueError(
-            f"Servern får varken skicka e-post eller skapa utkast "
-            f"(PROTONMAIL_SEND_MODE=disabled), så {action} vägras. Inget har sparats."
+            i18n.t(
+                'Servern får varken skicka e-post eller skapa utkast (PROTONMAIL_SEND_MODE=disabled), '
+                'så {action} vägras. Inget har sparats.',
+                action=action,
+            )
         )
 
 
@@ -129,11 +143,14 @@ def _refuse_destructive(settings: Any, action: str) -> None:
     """ValueError med PROTONMAIL_ALLOW_DESTRUCTIVE=false (skrivskyddet kontrolleras separat)."""
     if not _allow_destructive(settings):
         raise ValueError(
-            f"Servern får inte flytta, radera, byta namn på eller ersätta något i kontot "
-            f"(PROTONMAIL_ALLOW_DESTRUCTIVE=false), så {action} vägras. Inget har ändrats. "
-            f"Läsa, markera, stjärnmärka, lägga till etiketter och skapa nya utkast "
-            f"(create_draft, create_reply_draft, create_forward_draft) går bra; be "
-            f"användaren göra ändringen själv i Proton."
+            i18n.t(
+                'Servern får inte flytta, radera, byta namn på eller ersätta något i kontot '
+                '(PROTONMAIL_ALLOW_DESTRUCTIVE=false), så {action} vägras. Inget har ändrats. Läsa, '
+                'markera, stjärnmärka, lägga till etiketter och skapa nya utkast (create_draft, '
+                'create_reply_draft, create_forward_draft) går bra; be användaren göra ändringen själv '
+                'i Proton.',
+                action=action,
+            )
         )
 
 
@@ -169,8 +186,11 @@ def check_recipients(settings: Any, recipients: list[str]) -> None:
             refused.append(address)
     if refused:
         raise ValueError(
-            f"Skicket vägrades: {', '.join(refused)} finns inte bland de tillåtna "
-            f"mottagarna (PROTONMAIL_ALLOWED_RECIPIENTS). Inget mejl skickades till någon."
+            i18n.t(
+                'Skicket vägrades: {join} finns inte bland de tillåtna mottagarna '
+                '(PROTONMAIL_ALLOWED_RECIPIENTS). Inget mejl skickades till någon.',
+                join=', '.join(refused),
+            )
         )
 
 
@@ -185,8 +205,12 @@ def check_recipient_count(settings: Any, recipients: list[str]) -> None:
     count = len({address.lower() for address in recipients})
     if limit and count > limit:
         raise ValueError(
-            f"Skicket vägrades: {count} mottagare, men högst {limit} per mejl är tillåtet "
-            f"(PROTONMAIL_MAX_RECIPIENTS). Inget mejl skickades."
+            i18n.t(
+                'Skicket vägrades: {count} mottagare, men högst {limit} per mejl är tillåtet '
+                '(PROTONMAIL_MAX_RECIPIENTS). Inget mejl skickades.',
+                count=count,
+                limit=limit,
+            )
         )
 
 
@@ -196,9 +220,13 @@ _WINDOW = 3600.0
 def _wait_text(seconds: float) -> str:
     if seconds >= 60:
         minutes = math.ceil(seconds / 60)
-        return f"om {minutes} minut{'er' if minutes != 1 else ''}"
+        if minutes == 1:
+            return i18n.t("om {minutes} minut", minutes=minutes)
+        return i18n.t("om {minutes} minuter", minutes=minutes)
     whole = max(1, math.ceil(seconds))
-    return f"om {whole} sekund{'er' if whole != 1 else ''}"
+    if whole == 1:
+        return i18n.t("om {whole} sekund", whole=whole)
+    return i18n.t("om {whole} sekunder", whole=whole)
 
 
 class SendRateLimiter:
@@ -223,9 +251,14 @@ class SendRateLimiter:
             wait = self._times[-limit] + _WINDOW - now
             at = (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M:%S")
             raise ValueError(
-                f"Skicket vägrades: högst {limit} skick per timme är tillåtet "
-                f"(PROTONMAIL_MAX_SENDS_PER_HOUR), och gränsen är nådd. Nästa skick går "
-                f"{_wait_text(wait)} (kl. {at}). Inget mejl skickades."
+                i18n.t(
+                    'Skicket vägrades: högst {limit} skick per timme är tillåtet '
+                    '(PROTONMAIL_MAX_SENDS_PER_HOUR), och gränsen är nådd. Nästa skick går {wait_text} '
+                    '(kl. {at}). Inget mejl skickades.',
+                    limit=limit,
+                    wait_text=_wait_text(wait),
+                    at=at,
+                )
             )
         self._times.append(now)
 

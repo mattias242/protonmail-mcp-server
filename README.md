@@ -14,7 +14,7 @@ What you get:
 - **Prompts** for common tasks (summarise unread mail, triage, draft a reply, clean up newsletters).
 - **New mail via IMAP IDLE** on dedicated connections, without polling.
 
-Tool descriptions, server instructions, prompts and error messages are written in Swedish; models handle this fine, and the tool names and parameters are English. Set `PROTONMAIL_LANGUAGE=en` to get English tool titles and descriptions, parameter descriptions and prompt and resource titles in your client — what you see when it lists tools or asks you to approve a call — and English server instructions and prompt text for the model. Error messages are still Swedish.
+Tool descriptions, server instructions, prompts and error messages are written in Swedish; models handle this fine, and the tool names and parameters are English. Set `PROTONMAIL_LANGUAGE=en` to get English tool titles and descriptions, parameter descriptions and prompt and resource titles in your client — what you see when it lists tools or asks you to approve a call — and English server instructions, prompt text and error messages. Tool responses (notes, warnings) and errors in the settings at start-up are still Swedish.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md). Upgrading from 0.2.0? Version 0.3.0 has breaking changes (Python 3.12+, `mailbox` required for UID-based tools, new `search_emails` and `list_mailboxes` response formats and more) — read its upgrade notes first.
 
@@ -304,7 +304,7 @@ All settings use the `PROTONMAIL_` prefix and can be set in `.env` or as environ
 | `PROTONMAIL_MAX_RECIPIENTS` | `50` | Maximum unique recipients per send (To, Cc and Bcc together); `0` = no limit. More than 1000 address entries are always refused |
 | `PROTONMAIL_MAX_SENDS_PER_HOUR` | `30` | Maximum sends in a sliding hour, counted in memory (reset on restart); `0` = no limit. The error says when the next send is possible |
 | `PROTONMAIL_AUDIT_LOG` | — | File (absolute path or `~`) that also receives the audit log, one JSON line per send and per write operation |
-| `PROTONMAIL_LANGUAGE` | `sv` | Language of what the client shows you (tool titles and descriptions, parameter descriptions, prompt and resource titles) and of the server instructions and prompt text the model reads. `sv` or `en`. Names of tools, parameters and prompts never change. Error messages and tool responses stay Swedish |
+| `PROTONMAIL_LANGUAGE` | `sv` | Language of what the client shows you (tool titles and descriptions, parameter descriptions, prompt and resource titles), and of the server instructions, prompt text and error messages. `sv` or `en`. Names of tools, parameters and prompts never change. Tool responses and errors in the settings at start-up stay Swedish |
 | `PROTONMAIL_WATCH_ENABLED` | `true` | Watch folders for new mail with IMAP IDLE |
 | `PROTONMAIL_WATCH_MAILBOXES` | `INBOX` | Comma-separated folders to watch, at most 5 (each is its own Bridge connection) |
 | `PROTONMAIL_HTTP_TOKEN` | — | HTTP mode only (`--http`): the API key every request must carry, as `Authorization: Bearer` or `X-API-Key`. Required there, at least 32 characters |
@@ -370,7 +370,7 @@ CI runs the unit and BDD tests on Python 3.12, 3.13 and 3.14.
 ## Known limitations
 
 - Body search (`text`/`body`) with å, ä, ö finds about 95 % of matches: a word that quoted-printable happens to wrap mid-word is missed, as are words in base64-encoded parts or written as HTML entities (`&ouml;`).
-- Validation errors for missing or wrongly typed parameters come from pydantic, in English, before the tool runs; all other errors are in Swedish.
+- Validation errors for missing or wrongly typed parameters come from pydantic, in English, before the tool runs; all other errors are in Swedish, or in English with `PROTONMAIL_LANGUAGE=en` (except errors in the settings at start-up).
 - Homoglyphs (e.g. Cyrillic `а` for Latin `a`) are visible characters and are not removed, and `suspicious_content` does not catch every phrasing — it is a warning, not a guarantee.
 - Notifications for changes made by other clients only exist as new mail in watched folders (`PROTONMAIL_WATCH_MAILBOXES`, at most 5). Flags, labels, moves and folder changes made outside this server are not reported, and `rename_folder` does not notify sub-folders renamed along with their parent.
 - High-water marks for new mail and the hourly send counter are kept in memory and reset when the server restarts. If a `check_new_emails` call is interrupted after the mark moved but before the client got the answer, those emails no longer count as new (they are still listed by `list_emails`).
