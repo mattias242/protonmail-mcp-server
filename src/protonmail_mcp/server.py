@@ -100,6 +100,19 @@ E-post i Proton Mail via ProtonMail Bridge.
 current_context: ContextVar[Context | None] = ContextVar("current_context", default=None)
 
 
+def _language() -> str:
+    """PROTONMAIL_LANGUAGE. Utan giltiga inställningar (t.ex. inget användarnamn)
+    listar servern på standardspråket; lifespan rapporterar själva felet."""
+    from pydantic import ValidationError
+
+    from . import config
+
+    try:
+        return getattr(config.get_settings(), "language", "sv")
+    except ValidationError:
+        return "sv"
+
+
 class _GuardedMCPServer(MCPServer):
     """MCP-server som vägrar verktyg som policyn inte tillåter, innan de körs.
 
@@ -123,9 +136,32 @@ class _GuardedMCPServer(MCPServer):
         finally:
             audit.current_tool.reset(token)
 
+    # Språket i det klienten visar (PROTONMAIL_LANGUAGE, i18n.py): titlar och
+    # beskrivningar byts när de listas; verktygen registreras på svenska.
+
+    async def list_tools(self):
+        from . import i18n
+
+        return i18n.translate_tools(await super().list_tools(), _language())
+
+    async def list_prompts(self):
+        from . import i18n
+
+        return i18n.translate_prompts(await super().list_prompts(), _language())
+
+    async def list_resources(self):
+        from . import i18n
+
+        return i18n.translate_resources(await super().list_resources(), _language())
+
+    async def list_resource_templates(self):
+        from . import i18n
+
+        return i18n.translate_templates(await super().list_resource_templates(), _language())
+
     async def get_prompt(self, name, arguments=None, context=None):
         try:
-            return await super().get_prompt(name, arguments, context)
+            result = await super().get_prompt(name, arguments, context)
         except ValueError as exc:
             # SDK:n byter promptens eget fel (t.ex. en vägrad radbrytning i ett
             # argument) mot "Error rendering prompt …" utan orsaken; klienten ska
@@ -136,6 +172,15 @@ class _GuardedMCPServer(MCPServer):
             if cause is exc:
                 raise
             raise MCPError(INVALID_PARAMS, f"{exc}: {cause}") from exc
+        language = _language()
+        if language == "en" and hasattr(result, "description"):
+            from . import i18n
+
+            prompt = next((p for p in await super().list_prompts() if p.name == name), None)
+            if prompt is not None:
+                description = i18n.prompt_description(name, prompt.title, prompt.description, language)
+                result = result.model_copy(update={"description": description})
+        return result
 
     async def read_resource(self, uri, context=None):
         token = current_context.set(context)
