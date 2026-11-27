@@ -263,6 +263,10 @@ the code has. If you add something, update the tables in the same commit.
 
 ## Way of working
 
+- **Check open pull requests before planning a feature or a fix.** List the open PRs (including drafts and those
+  from forks) and read any that touch the same issue or code. If someone has already done the work, review it, ask
+  for changes or build on it — never implement it again in parallel. When a contribution is superseded anyway, say so
+  honestly, credit it, and port the parts that are still missing with the contributor as the commit author.
 - **Trunk-based.** Small commits straight to `main`; commit and push after every green change. No long-lived branches —
   if something is half done, hide it behind a setting.
 - **Conventional Commits in English**, e.g. `fix(imap): check the SELECT response`, `feat(drafts): …`,
