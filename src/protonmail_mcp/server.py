@@ -101,16 +101,10 @@ current_context: ContextVar[Context | None] = ContextVar("current_context", defa
 
 
 def _language() -> str:
-    """PROTONMAIL_LANGUAGE. Utan giltiga inställningar (t.ex. inget användarnamn)
-    listar servern på standardspråket; lifespan rapporterar själva felet."""
-    from pydantic import ValidationError
+    """PROTONMAIL_LANGUAGE (i18n.current_language)."""
+    from . import i18n
 
-    from . import config
-
-    try:
-        return getattr(config.get_settings(), "language", "sv")
-    except ValidationError:
-        return "sv"
+    return i18n.current_language()
 
 
 class _GuardedMCPServer(MCPServer):
@@ -198,6 +192,21 @@ mcp = _GuardedMCPServer(
 )
 
 
+def apply_language(language: str) -> None:
+    """Serverns instruktioner till modellen på språket (PROTONMAIL_LANGUAGE).
+
+    Instruktionerna skickas när en klient ansluter (initialize), så språket
+    sätts en gång när servern startar. SDK:n har ingen publik setter, därav
+    _lowlevel_server.
+    """
+    from . import i18n, i18n_en
+
+    text = INSTRUCTIONS
+    if language == "en":
+        text = i18n_en.TEXTS.get(i18n.sv_hash(INSTRUCTIONS), INSTRUCTIONS)
+    mcp._lowlevel_server.instructions = text
+
+
 def register_tools() -> None:
     """Registrera alla verktyg på ``mcp`` (importen av modulerna gör det).
 
@@ -226,6 +235,7 @@ def main(argv: list[str] | None = None) -> None:
     if ignored:
         logger.warning("Ignorerar okända argument: %s", " ".join(ignored))
     register_tools()
+    apply_language(_language())
     if not args.http:
         mcp.run(transport="stdio")
         return

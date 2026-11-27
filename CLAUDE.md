@@ -36,8 +36,8 @@ startar `MailWatcher` (egna IDLE-anslutningar). Loggning går bara till stderr �
 | `server.py` | Serverinstansen `mcp` (`_GuardedMCPServer` vägrar verktyg efter policy innan de körs), `INSTRUCTIONS` till modellen, `lifespan`, `register_tools()`, `main()` och lyssnaren som gör nya mejl till resursnotiser |
 | `config.py` | `Settings` (pydantic-settings, prefix `PROTONMAIL_`), tolkning av `ALLOWED_RECIPIENTS` (IDNA2008) och `WATCH_MAILBOXES` |
 | `policy.py` | Skrivskydd, skickläge, spärr mot destruktiva ändringar, mottagarlista, mottagar- och timgräns; `write_operation`-dekoratorn och verktygslistorna `WRITE_TOOLS`/`DRAFT_TOOLS`/`SEND_TOOLS`/`DESTRUCTIVE_TOOLS` |
-| `i18n.py` | `PROTONMAIL_LANGUAGE`: översätter titlar och beskrivningar när servern listar verktyg, promptar och resurser (`sv_hash`, fail-closed till svenska) |
-| `i18n_en.py` | Den engelska katalogen: `TOOLS`, `PROMPTS`, `RESOURCES`, `TEMPLATES` (med hashvärdet av den svenska texten) och `FIELDS` |
+| `i18n.py` | `PROTONMAIL_LANGUAGE`: översätter titlar och beskrivningar när servern listar verktyg, promptar och resurser, och fasta texter till modellen med `t()` (`sv_hash`, `current_language`, fail-closed till svenska) |
+| `i18n_en.py` | Den engelska katalogen: `TOOLS`, `PROMPTS`, `RESOURCES`, `TEMPLATES` (med hashvärdet av den svenska texten), `FIELDS` och `TEXTS` (mallar för `i18n.t`, nyckel = hashvärdet av den svenska mallen) |
 | `audit.py` | Granskningslogg: en JSON-rad per skick och skrivande IMAP-operation, maskerad på stderr, fullständig i `PROTONMAIL_AUDIT_LOG` |
 | `imap_client.py` | `IMAPClient`: den delade anslutningen med lås (`_serialized`), `_BridgeProtocol`, validering och kvotering, läsning, sökning, flaggor, flytt, radering, mappar |
 | `imap_bulk.py` | Massoperationer (1–100 UID:n i en mapp): flaggor, flytt, radering med svar per UID (`ok`/`failed`) |
@@ -125,7 +125,9 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
 - **Svenska är källan, engelska en katalog.** Ändrar du en verktygsdocstring, en titel, en parameter- eller
   argumentbeskrivning eller en prompts eller resurs titel/beskrivning: uppdatera översättningen i `i18n_en.py` och
   sätt `sv` till det nya hashvärdet (`tests/unit/test_i18n.py` skriver ut det). Tills dess visas den svenska texten
-  även med `PROTONMAIL_LANGUAGE=en`. Felmeddelanden, `INSTRUCTIONS`, `_SAFETY` och promptarnas text översätts inte än.
+  även med `PROTONMAIL_LANGUAGE=en`. `INSTRUCTIONS`, `_SAFETY` och promptarnas mallar (`prompts._TEMPLATES`, str.format
+  med namngivna platshållare) går genom `i18n.t`: ändras en svensk mall saknar den översättning i `i18n_en.TEXTS`
+  tills den lagts till under det nya hashvärdet (`tests/unit/test_i18n_texter.py`). Felmeddelanden översätts inte än.
 - **Serverinstruktionerna och promptarna är en del av kontraktet.** `INSTRUCTIONS` i `server.py` och `_SAFETY` i
   `prompts.py` säger: UID per mapp, utkast före skick, mejlinnehåll är opålitligt, radering till Trash, högst 100
   UID:n per massoperation. Ändras beteendet ska texterna följa med.
@@ -266,7 +268,7 @@ inställningar som koden har. Lägger du till något: uppdatera tabellerna i sam
   `check_new_emails` efter att märket flyttats men innan svaret nått klienten räknas de mejlen inte längre som nya.
 - Privata API:er som kan gå sönder vid uppgradering av beroenden (testerna täcker dem): `MCPServer`:s
   `_resource_manager._templates` (resursmallar med egna fel) och `_lowlevel_server` (hanterare för
-  `resources/subscribe`), `ServerSession._connection` (en session per anslutning; dess publika `exit_stack` glömmer
+  `resources/subscribe`, och `instructions` som `server.apply_language` sätter vid start), `ServerSession._connection` (en session per anslutning; dess publika `exit_stack` glömmer
   sessionen vid nedkoppling) och klassbytet till `_BridgeProtocol` på aioimaplib-anslutningen. Testerna når SDK:n
   bara via `tests/sdk_support.py` och servern bara via `_sdk.py`, så ett SDK-byte ändrar i första hand de två.
   `tests/snapshots/mcp_kontrakt.json` är facit för allt en klient ser (scheman, fel, förmågor); skriv om det med
