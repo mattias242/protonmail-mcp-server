@@ -13,7 +13,8 @@ async def list_mailboxes(ctx: Context) -> list[dict]:
             verktyg; etiketter med "/" i namnet har det escapat som "\\/".
         type: "system" (INBOX, Drafts, Sent, Starred, Archive, Spam, Trash,
             All Mail), "folder" (Folders/*), "label" (Labels/*) eller
-            "container" (behållare som Folders och Labels, går inte att öppna).
+            "container" (behållarna Mappar och Etiketter, som heter Folders och
+            Labels hos Bridge; går inte att öppna).
         selectable: False för behållare; de innehåller inga mejl.
         special_use: "\\Drafts", "\\Sent", "\\All", "\\Archive", "\\Junk",
             "\\Trash", "\\Flagged" eller None.
@@ -26,8 +27,9 @@ async def list_mailboxes(ctx: Context) -> list[dict]:
 async def get_mailbox_status(ctx: Context, mailbox: Mailbox = "INBOX") -> dict:
     """Hämta antal meddelanden och olästa i en mapp.
 
-    Kastar fel om mappen inte finns, och om den är en behållare (Folders,
-    Labels; selectable: false i list_mailboxes) som inte kan innehålla mejl.
+    Kastar fel om mappen inte finns, och om den är en behållare (Mappar eller
+    Etiketter, som heter Folders och Labels hos Bridge; selectable: false i
+    list_mailboxes) som inte kan innehålla mejl.
 
     Args:
         mailbox: Mappnamn (standard: INBOX)

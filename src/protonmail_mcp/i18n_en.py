@@ -24,7 +24,7 @@ class Entry(NamedTuple):
 
 TOOLS: dict[str, Entry] = {
     "list_mailboxes": Entry(
-        sv="1144f1b81afd",
+        sv="ab229ef2e844",
         title="List folders and labels",
         description="""\
 List all folders/labels in the mailbox.
@@ -34,19 +34,21 @@ Each entry has:
         tools; labels with "/" in the name have it escaped as "\\/".
     type: "system" (INBOX, Drafts, Sent, Starred, Archive, Spam, Trash,
         All Mail), "folder" (Folders/*), "label" (Labels/*) or
-        "container" (containers such as Folders and Labels, cannot be opened).
+        "container" (the folder and label containers, named Folders and
+        Labels in Bridge; cannot be opened).
     selectable: False for containers; they hold no emails.
     special_use: "\\Drafts", "\\Sent", "\\All", "\\Archive", "\\Junk",
         "\\Trash", "\\Flagged" or None.""",
     ),
     "get_mailbox_status": Entry(
-        sv="97559eb93342",
+        sv="360f17e6f08b",
         title="Number of emails in a folder",
         description="""\
 Get the number of messages and unread messages in a folder.
 
-Raises an error if the folder does not exist, and if it is a container
-(Folders, Labels; selectable: false in list_mailboxes) that cannot hold emails.
+Raises an error if the folder does not exist, and if it is a container (the
+folder or label container, named Folders and Labels in Bridge; selectable:
+false in list_mailboxes) that cannot hold emails.
 
 Args:
     mailbox: Folder name (default: INBOX)""",

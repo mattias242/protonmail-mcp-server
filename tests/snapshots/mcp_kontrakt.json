@@ -1012,7 +1012,7 @@
         "readOnlyHint": true,
         "title": "Antal mejl i en mapp"
       },
-      "description": "Hämta antal meddelanden och olästa i en mapp.\n\nKastar fel om mappen inte finns, och om den är en behållare (Folders,\nLabels; selectable: false i list_mailboxes) som inte kan innehålla mejl.\n\nArgs:\n    mailbox: Mappnamn (standard: INBOX)",
+      "description": "Hämta antal meddelanden och olästa i en mapp.\n\nKastar fel om mappen inte finns, och om den är en behållare (Mappar eller\nEtiketter, som heter Folders och Labels hos Bridge; selectable: false i\nlist_mailboxes) som inte kan innehålla mejl.\n\nArgs:\n    mailbox: Mappnamn (standard: INBOX)",
       "inputSchema": {
         "properties": {
           "mailbox": {
@@ -1114,7 +1114,7 @@
         "readOnlyHint": true,
         "title": "Lista mappar och etiketter"
       },
-      "description": "Lista alla mappar/etiketter i brevlådan.\n\nVarje post har:\n    name: läsbart namn (å/ä/ö avkodade). Skicka det oförändrat till andra\n        verktyg; etiketter med \"/\" i namnet har det escapat som \"\\/\".\n    type: \"system\" (INBOX, Drafts, Sent, Starred, Archive, Spam, Trash,\n        All Mail), \"folder\" (Folders/*), \"label\" (Labels/*) eller\n        \"container\" (behållare som Folders och Labels, går inte att öppna).\n    selectable: False för behållare; de innehåller inga mejl.\n    special_use: \"\\Drafts\", \"\\Sent\", \"\\All\", \"\\Archive\", \"\\Junk\",\n        \"\\Trash\", \"\\Flagged\" eller None.",
+      "description": "Lista alla mappar/etiketter i brevlådan.\n\nVarje post har:\n    name: läsbart namn (å/ä/ö avkodade). Skicka det oförändrat till andra\n        verktyg; etiketter med \"/\" i namnet har det escapat som \"\\/\".\n    type: \"system\" (INBOX, Drafts, Sent, Starred, Archive, Spam, Trash,\n        All Mail), \"folder\" (Folders/*), \"label\" (Labels/*) eller\n        \"container\" (behållarna Mappar och Etiketter, som heter Folders och\n        Labels hos Bridge; går inte att öppna).\n    selectable: False för behållare; de innehåller inga mejl.\n    special_use: \"\\Drafts\", \"\\Sent\", \"\\All\", \"\\Archive\", \"\\Junk\",\n        \"\\Trash\", \"\\Flagged\" eller None.",
       "inputSchema": {
         "properties": {},
         "title": "list_mailboxesArguments",
