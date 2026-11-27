@@ -29,8 +29,8 @@ TOOLS_SECTION = "Tools"
 RESOURCES_SECTION = "Resources and subscriptions"
 PROMPTS_SECTION = "Prompts"
 SETTINGS_SECTION = "Configuration"
-# Rubriken i CLAUDE.md som modulkartan står under
-MODULE_MAP_SECTION = "Arkitektur och modulkarta"
+# The heading in CLAUDE.md that the module map is under
+MODULE_MAP_SECTION = "Architecture and module map"
 
 # Effektkolumnen i README:s verktygstabeller
 READ_ONLY = "read-only"
